@@ -1,0 +1,52 @@
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Setting;
+use App\Services\SyncService;
+use App\Services\TwitchApiService;
+use Illuminate\Console\Command;
+
+class SyncStreamsCommand extends Command
+{
+    protected $signature = 'streams:sync {--force : Skip frequency check}';
+
+    protected $description = 'Sync live streams from tracked Twitch categories';
+
+    public function handle(SyncService $sync, TwitchApiService $twitch): int
+    {
+        if (! $twitch->isConfigured()) {
+            $this->error('Twitch API credentials not configured. Please set them in Settings.');
+
+            return self::FAILURE;
+        }
+
+        // Check sync frequency (skip if --force)
+        if (! $this->option('force')) {
+            $lastSync = Setting::get('last_sync_at');
+            $frequency = (int) Setting::get('sync_frequency_minutes', 5);
+
+            if ($lastSync) {
+                $lastSyncTime = \Carbon\Carbon::parse($lastSync);
+                $nextAllowed = $lastSyncTime->addMinutes($frequency);
+
+                if (now()->lt($nextAllowed)) {
+                    $this->line('Skipping — next sync allowed at '.$nextAllowed->format('H:i:s'));
+
+                    return self::SUCCESS;
+                }
+            }
+        }
+
+        $this->info('Starting stream sync...');
+        $result = $sync->sync();
+
+        $this->info("Sync complete in {$result->durationSeconds}s:");
+        $this->line("  New streams: {$result->newStreams}");
+        $this->line("  Updated: {$result->updatedStreams}");
+        $this->line("  Ended: {$result->endedStreams}");
+        $this->line("  Alerts triggered: {$result->alertsTriggered}");
+
+        return self::SUCCESS;
+    }
+}

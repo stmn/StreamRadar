@@ -1,0 +1,13 @@
+services:
+  streamradar:
+    build: .
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - ./data:/app/database
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=http://localhost:${APP_PORT:-8080}
+    restart: unless-stopped
+

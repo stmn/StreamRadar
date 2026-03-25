@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@source '../js/**/*.vue';
+@source '../js/**/*.ts';
+
+@theme {
+    --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+    --color-primary-50: oklch(0.97 0.014 270);
+    --color-primary-100: oklch(0.93 0.029 270);
+    --color-primary-200: oklch(0.87 0.058 270);
+    --color-primary-300: oklch(0.78 0.098 270);
+    --color-primary-400: oklch(0.68 0.148 270);
+    --color-primary-500: oklch(0.58 0.19 270);
+    --color-primary-600: oklch(0.50 0.19 270);
+    --color-primary-700: oklch(0.44 0.17 270);
+    --color-primary-800: oklch(0.37 0.14 270);
+    --color-primary-900: oklch(0.31 0.11 270);
+    --color-primary-950: oklch(0.22 0.08 270);
+    --color-twitch: oklch(0.62 0.21 290);
+}
+
+/* Borderless inputs and selects */
+input[type="text"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+select,
+textarea {
+    border: none !important;
+}
+
+/* Floating-vue tooltip theme */
+.v-popper--theme-tooltip .v-popper__inner {
+    background: #18181b;
+    color: #fafafa;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 6px;
+}
+.v-popper--theme-tooltip .v-popper__arrow-outer {
+    border-color: #18181b;
+}
+
+/* List transitions */
+.list-enter-active {
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+.list-leave-active {
+    transition: opacity 0.15s ease-in;
+}
+.list-enter-from {
+    opacity: 0;
+    transform: translateY(-8px);
+}
+.list-leave-to {
+    opacity: 0;
+}
+
+/* All interactive elements get pointer cursor */
+button,
+[role="button"],
+a,
+select,
+label[for],
+input[type="checkbox"],
+input[type="radio"],
+summary {
+    cursor: pointer;
+}

@@ -1,0 +1,357 @@
+<?php
+
+namespace App\Services;
+
+use App\DTOs\SyncResult;
+use App\Models\BlacklistRule;
+use App\Models\Category;
+use App\Models\HistoryEvent;
+use App\Models\Setting;
+use App\Models\Stream;
+use App\Models\TrackedChannel;
+use Illuminate\Support\Facades\Log;
+
+class SyncService
+{
+    public function __construct(
+        private TwitchApiService $twitch,
+        private AlertService $alerts,
+    ) {}
+
+    public function sync(): SyncResult
+    {
+        $start = microtime(true);
+        $totals = ['new' => 0, 'updated' => 0, 'alerts' => 0];
+
+        $categories = Category::where('is_active', true)->get();
+        $allFetchedStreamIds = [];
+
+        // Sync categories
+        foreach ($categories as $category) {
+            $result = $this->syncCategory($category);
+            $totals['new'] += $result['new'];
+            $totals['updated'] += $result['updated'];
+            $totals['alerts'] += $result['alerts'];
+            array_push($allFetchedStreamIds, ...$result['stream_ids']);
+        }
+
+        // Sync tracked channels
+        $channelResult = $this->syncTrackedChannels();
+        $totals['new'] += $channelResult['new'];
+        $totals['updated'] += $channelResult['updated'];
+        $totals['alerts'] += $channelResult['alerts'];
+        array_push($allFetchedStreamIds, ...$channelResult['stream_ids']);
+
+        // Remove streams that are no longer live — log each as offline
+        $endedQuery = Stream::with('category');
+        if (! empty($allFetchedStreamIds)) {
+            $endedQuery->whereNotIn('twitch_id', $allFetchedStreamIds);
+        }
+        $endedStreams = $endedQuery->get();
+
+        foreach ($endedStreams as $stream) {
+            HistoryEvent::create([
+                'type' => 'stream_offline',
+                'stream_twitch_id' => $stream->twitch_id,
+                'streamer_login' => $stream->user_login,
+                'streamer_name' => $stream->user_name,
+                'category_name' => $stream->category?->name,
+                'title' => $stream->title,
+                'viewer_count' => $stream->viewer_count,
+                'profile_image_url' => $stream->profile_image_url,
+            ]);
+        }
+        $endedCount = $endedStreams->count();
+        Stream::whereIn('id', $endedStreams->pluck('id'))->delete();
+
+        $this->fetchMissingAvatars();
+
+        Setting::set('last_sync_at', now()->toIso8601String());
+
+        $duration = round(microtime(true) - $start, 2);
+
+        HistoryEvent::create([
+            'type' => 'sync_completed',
+            'metadata' => [
+                'new' => $totals['new'],
+                'updated' => $totals['updated'],
+                'ended' => $endedCount,
+                'alerts' => $totals['alerts'],
+                'duration' => $duration,
+            ],
+        ]);
+
+        return new SyncResult(
+            newStreams: $totals['new'],
+            updatedStreams: $totals['updated'],
+            endedStreams: $endedCount,
+            alertsTriggered: $totals['alerts'],
+            durationSeconds: $duration,
+        );
+    }
+
+    public function syncCategory(Category $category): array
+    {
+        $newStreams = 0;
+        $updatedStreams = 0;
+        $alertsTriggered = 0;
+        $fetchedIds = [];
+
+        $blacklist = $this->loadBlacklist();
+
+        try {
+            $twitchStreams = $this->twitch->getAllStreamsForCategory($category->twitch_id);
+        } catch (\Exception $e) {
+            Log::error("Failed to fetch streams for category {$category->name}: ".$e->getMessage());
+
+            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => []];
+        }
+
+        $filters = $category->effectiveFilters();
+
+        foreach ($twitchStreams as $twitchStream) {
+            if (! $this->passesFilters($twitchStream, $filters)) {
+                continue;
+            }
+
+            if ($this->isOfflineThumbnail($twitchStream['thumbnail_url'] ?? null)) {
+                continue;
+            }
+
+            if ($this->isBlacklisted($twitchStream, $blacklist)) {
+                continue;
+            }
+
+            $fetchedIds[] = $twitchStream['id'];
+            $existing = Stream::where('twitch_id', $twitchStream['id'])->first();
+            $isNew = ! $existing;
+
+            $stream = Stream::updateOrCreate(
+                ['twitch_id' => $twitchStream['id']],
+                [
+                    'user_id' => $twitchStream['user_id'] ?? '',
+                    'user_login' => $twitchStream['user_login'] ?? '',
+                    'user_name' => $twitchStream['user_name'] ?? '',
+                    'category_id' => $category->id,
+                    'game_name' => $twitchStream['game_name'] ?? $category->name,
+                    'game_box_art_url' => ! empty($twitchStream['game_id']) ? "https://static-cdn.jtvnw.net/ttv-boxart/{$twitchStream['game_id']}_IGDB-{width}x{height}.jpg" : $category->box_art_url,
+                    'title' => $twitchStream['title'] ?? '',
+                    'viewer_count' => $twitchStream['viewer_count'] ?? 0,
+                    'language' => $twitchStream['language'] ?? null,
+                    'thumbnail_url' => $twitchStream['thumbnail_url'] ?? null,
+                    'started_at' => $twitchStream['started_at'] ?? null,
+                    'tags' => $twitchStream['tags'] ?? null,
+                    'is_mature' => $twitchStream['is_mature'] ?? false,
+                    'synced_at' => now(),
+                ],
+            );
+
+            if ($isNew) {
+                $newStreams++;
+
+                HistoryEvent::create([
+                    'type' => 'stream_online',
+                    'stream_twitch_id' => $stream->twitch_id,
+                    'streamer_login' => $stream->user_login,
+                    'streamer_name' => $stream->user_name,
+                    'category_name' => $category->name,
+                    'title' => $stream->title,
+                    'viewer_count' => $stream->viewer_count,
+                    'profile_image_url' => $stream->profile_image_url,
+                ]);
+            } else {
+                $updatedStreams++;
+            }
+
+            $triggered = $this->alerts->checkAlerts($stream, $isNew);
+            $alertsTriggered += count($triggered);
+        }
+
+        $this->fetchMissingAvatars();
+
+        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds];
+    }
+
+    public function syncTrackedChannels(): array
+    {
+        $channels = TrackedChannel::where('is_active', true)->get();
+        if ($channels->isEmpty()) {
+            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => []];
+        }
+
+        $logins = $channels->pluck('user_login')->toArray();
+        $blacklist = $this->loadBlacklist();
+        $newStreams = 0;
+        $updatedStreams = 0;
+        $alertsTriggered = 0;
+        $fetchedIds = [];
+
+        try {
+            $twitchStreams = $this->twitch->getStreamsByUsers($logins);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch tracked channel streams: '.$e->getMessage());
+
+            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => []];
+        }
+
+        // Map game_id to existing categories (don't auto-create)
+        $gameIds = collect($twitchStreams)->pluck('game_id')->unique()->filter()->toArray();
+        $categoryMap = Category::whereIn('twitch_id', $gameIds)->pluck('id', 'twitch_id')->toArray();
+
+        foreach ($twitchStreams as $twitchStream) {
+            if ($this->isOfflineThumbnail($twitchStream['thumbnail_url'] ?? null)) {
+                continue;
+            }
+
+            if ($this->isBlacklisted($twitchStream, $blacklist)) {
+                continue;
+            }
+
+            $fetchedIds[] = $twitchStream['id'];
+            $existing = Stream::where('twitch_id', $twitchStream['id'])->first();
+            $isNew = ! $existing;
+
+            $categoryId = $categoryMap[$twitchStream['game_id'] ?? ''] ?? null;
+
+            $stream = Stream::updateOrCreate(
+                ['twitch_id' => $twitchStream['id']],
+                [
+                    'user_id' => $twitchStream['user_id'] ?? '',
+                    'user_login' => $twitchStream['user_login'] ?? '',
+                    'user_name' => $twitchStream['user_name'] ?? '',
+                    'category_id' => $categoryId,
+                    'game_name' => $twitchStream['game_name'] ?? null,
+                    'game_box_art_url' => ! empty($twitchStream['game_id']) ? "https://static-cdn.jtvnw.net/ttv-boxart/{$twitchStream['game_id']}_IGDB-{width}x{height}.jpg" : null,
+                    'title' => $twitchStream['title'] ?? '',
+                    'viewer_count' => $twitchStream['viewer_count'] ?? 0,
+                    'language' => $twitchStream['language'] ?? null,
+                    'thumbnail_url' => $twitchStream['thumbnail_url'] ?? null,
+                    'started_at' => $twitchStream['started_at'] ?? null,
+                    'tags' => $twitchStream['tags'] ?? null,
+                    'is_mature' => $twitchStream['is_mature'] ?? false,
+                    'synced_at' => now(),
+                ],
+            );
+
+            if ($isNew) {
+                $newStreams++;
+                HistoryEvent::create([
+                    'type' => 'stream_online',
+                    'stream_twitch_id' => $stream->twitch_id,
+                    'streamer_login' => $stream->user_login,
+                    'streamer_name' => $stream->user_name,
+                    'category_name' => $twitchStream['game_name'] ?? null,
+                    'title' => $stream->title,
+                    'viewer_count' => $stream->viewer_count,
+                    'profile_image_url' => $stream->profile_image_url,
+                ]);
+            } else {
+                $updatedStreams++;
+            }
+
+            $triggered = $this->alerts->checkAlerts($stream, $isNew);
+            $alertsTriggered += count($triggered);
+        }
+
+        $this->fetchMissingAvatars();
+
+        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds];
+    }
+
+    private function loadBlacklist(): array
+    {
+        return [
+            'channels' => BlacklistRule::channels()->pluck('value')->map(fn ($v) => strtolower($v))->toArray(),
+            'keywords' => BlacklistRule::keywords()->pluck('value')->map(fn ($v) => strtolower($v))->toArray(),
+            'tags' => BlacklistRule::tags()->pluck('value')->map(fn ($v) => strtolower($v))->toArray(),
+        ];
+    }
+
+    private function isBlacklisted(array $stream, array $blacklist): bool
+    {
+        $login = strtolower($stream['user_login'] ?? '');
+        if (in_array($login, $blacklist['channels'])) {
+            return true;
+        }
+
+        $title = strtolower($stream['title'] ?? '');
+        foreach ($blacklist['keywords'] as $keyword) {
+            if (str_contains($title, $keyword)) {
+                return true;
+            }
+        }
+
+        $streamTags = array_map('strtolower', $stream['tags'] ?? []);
+        foreach ($blacklist['tags'] as $tag) {
+            if (in_array($tag, $streamTags)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isOfflineThumbnail(?string $url): bool
+    {
+        return $url && str_contains($url, 'ttv-static/404_preview');
+    }
+
+    private function passesFilters(array $stream, array $filters): bool
+    {
+        if (! empty($filters['min_viewers']) && ($stream['viewer_count'] ?? 0) < $filters['min_viewers']) {
+            return false;
+        }
+
+        if (! empty($filters['languages'])) {
+            $streamLang = strtolower($stream['language'] ?? '');
+            $acceptedLangs = array_map('strtolower', $filters['languages']);
+            if (! in_array($streamLang, $acceptedLangs)) {
+                return false;
+            }
+        }
+
+        if (! empty($filters['keywords'])) {
+            $titleLower = strtolower($stream['title'] ?? '');
+            $matched = false;
+            foreach ($filters['keywords'] as $keyword) {
+                if (str_contains($titleLower, strtolower($keyword))) {
+                    $matched = true;
+                    break;
+                }
+            }
+            if (! $matched) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function fetchMissingAvatars(): void
+    {
+        $streams = Stream::whereNull('profile_image_url')
+            ->select('user_id', 'user_login')
+            ->distinct()
+            ->limit(100)
+            ->get();
+
+        if ($streams->isEmpty()) {
+            return;
+        }
+
+        try {
+            $userIds = $streams->pluck('user_id')->unique()->toArray();
+            $users = $this->twitch->getUsersByIds($userIds);
+
+            $avatarMap = collect($users)->keyBy('id')->map(fn ($u) => $u['profile_image_url'] ?? null);
+
+            foreach ($avatarMap as $userId => $avatarUrl) {
+                if ($avatarUrl) {
+                    Stream::where('user_id', $userId)->update(['profile_image_url' => $avatarUrl]);
+                }
+            }
+        } catch (\Exception $e) {
+            Log::warning('Failed to fetch avatars: '.$e->getMessage());
+        }
+    }
+}
