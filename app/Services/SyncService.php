@@ -18,6 +18,11 @@ class SyncService
         private AlertService $alerts,
     ) {}
 
+    public function getAlertService(): AlertService
+    {
+        return $this->alerts;
+    }
+
     public function sync(): SyncResult
     {
         $start = microtime(true);
@@ -25,6 +30,7 @@ class SyncService
 
         $categories = Category::where('is_active', true)->get();
         $allFetchedStreamIds = [];
+        $allTriggered = [];
 
         // Sync categories
         foreach ($categories as $category) {
@@ -33,6 +39,7 @@ class SyncService
             $totals['updated'] += $result['updated'];
             $totals['alerts'] += $result['alerts'];
             array_push($allFetchedStreamIds, ...$result['stream_ids']);
+            array_push($allTriggered, ...$result['triggered_alerts']);
         }
 
         // Sync tracked channels
@@ -41,6 +48,7 @@ class SyncService
         $totals['updated'] += $channelResult['updated'];
         $totals['alerts'] += $channelResult['alerts'];
         array_push($allFetchedStreamIds, ...$channelResult['stream_ids']);
+        array_push($allTriggered, ...$channelResult['triggered_alerts']);
 
         // Remove streams that are no longer live — log each as offline
         $endedQuery = Stream::with('category');
@@ -66,6 +74,9 @@ class SyncService
 
         $this->fetchMissingAvatars();
 
+        // Send all alert notifications in one batch
+        $this->alerts->sendNotifications($allTriggered);
+
         Setting::set('last_sync_at', now()->toIso8601String());
 
         $duration = round(microtime(true) - $start, 2);
@@ -90,12 +101,13 @@ class SyncService
         );
     }
 
-    public function syncCategory(Category $category): array
+    public function syncCategory(Category $category, bool $silentAlerts = false): array
     {
         $newStreams = 0;
         $updatedStreams = 0;
         $alertsTriggered = 0;
         $fetchedIds = [];
+        $allTriggered = [];
 
         $blacklist = $this->loadBlacklist();
 
@@ -104,7 +116,7 @@ class SyncService
         } catch (\Exception $e) {
             Log::error("Failed to fetch streams for category {$category->name}: ".$e->getMessage());
 
-            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => []];
+            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => [], 'triggered_alerts' => []];
         }
 
         $filters = $category->effectiveFilters();
@@ -125,6 +137,7 @@ class SyncService
             $fetchedIds[] = $twitchStream['id'];
             $existing = Stream::where('twitch_id', $twitchStream['id'])->first();
             $isNew = ! $existing;
+            $oldStream = $existing ? clone $existing : null;
 
             $stream = Stream::updateOrCreate(
                 ['twitch_id' => $twitchStream['id']],
@@ -163,20 +176,21 @@ class SyncService
                 $updatedStreams++;
             }
 
-            $triggered = $this->alerts->checkAlerts($stream, $isNew);
+            $triggered = $this->alerts->checkAlerts($stream, $oldStream, $silentAlerts);
             $alertsTriggered += count($triggered);
+            array_push($allTriggered, ...$triggered);
         }
 
         $this->fetchMissingAvatars();
 
-        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds];
+        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds, 'triggered_alerts' => $allTriggered];
     }
 
-    public function syncTrackedChannels(): array
+    public function syncTrackedChannels(bool $silentAlerts = false): array
     {
         $channels = TrackedChannel::where('is_active', true)->get();
         if ($channels->isEmpty()) {
-            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => []];
+            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => [], 'triggered_alerts' => []];
         }
 
         $logins = $channels->pluck('user_login')->toArray();
@@ -185,13 +199,14 @@ class SyncService
         $updatedStreams = 0;
         $alertsTriggered = 0;
         $fetchedIds = [];
+        $allTriggered = [];
 
         try {
             $twitchStreams = $this->twitch->getStreamsByUsers($logins);
         } catch (\Exception $e) {
             Log::error('Failed to fetch tracked channel streams: '.$e->getMessage());
 
-            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => []];
+            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => [], 'triggered_alerts' => []];
         }
 
         // Map game_id to existing categories (don't auto-create)
@@ -210,6 +225,7 @@ class SyncService
             $fetchedIds[] = $twitchStream['id'];
             $existing = Stream::where('twitch_id', $twitchStream['id'])->first();
             $isNew = ! $existing;
+            $oldStream = $existing ? clone $existing : null;
 
             $categoryId = $categoryMap[$twitchStream['game_id'] ?? ''] ?? null;
 
@@ -249,13 +265,14 @@ class SyncService
                 $updatedStreams++;
             }
 
-            $triggered = $this->alerts->checkAlerts($stream, $isNew);
+            $triggered = $this->alerts->checkAlerts($stream, $oldStream, $silentAlerts);
             $alertsTriggered += count($triggered);
+            array_push($allTriggered, ...$triggered);
         }
 
         $this->fetchMissingAvatars();
 
-        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds];
+        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds, 'triggered_alerts' => $allTriggered];
     }
 
     private function loadBlacklist(): array

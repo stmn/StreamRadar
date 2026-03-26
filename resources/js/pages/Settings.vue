@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useForm, router } from '@inertiajs/vue3';
-import { Key, RefreshCw, Filter, Mail, Palette, Terminal, X, Plus, MessageCircle, Lock, ShieldOff, Webhook, Download, Upload } from 'lucide-vue-next';
+import { Key, RefreshCw, Filter, Mail, Palette, Terminal, X, Plus, MessageCircle, Lock, ShieldOff, Webhook, Download, Upload, Send, Loader2, BotMessageSquare, ArrowUpCircle } from 'lucide-vue-next';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { useTheme } from '@/composables/useTheme';
 
@@ -11,13 +11,14 @@ const { theme: currentTheme, setTheme } = useTheme();
 const form = useForm({
     twitch_client_id: props.settings.twitch_client_id || '',
     twitch_client_secret: props.settings.twitch_client_secret || '',
+    auto_sync_enabled: props.settings.auto_sync_enabled !== '0' && props.settings.auto_sync_enabled !== false,
     sync_frequency_minutes: props.settings.sync_frequency_minutes || '5',
     global_min_viewers: props.settings.global_min_viewers || '0',
     global_languages: props.settings.global_languages || '[]',
     global_keywords: props.settings.global_keywords || '[]',
     theme: props.settings.theme || 'system',
     mail_to: props.settings.mail_to || '',
-    smtp_host: props.settings.smtp_host || 'localhost',
+    smtp_host: props.settings.smtp_host || 'mailpit',
     smtp_port: props.settings.smtp_port || '1025',
     smtp_username: props.settings.smtp_username || '',
     smtp_password: props.settings.smtp_password || '',
@@ -25,7 +26,13 @@ const form = useForm({
     mail_from_address: props.settings.mail_from_address || 'streamradar@localhost',
     mail_from_name: props.settings.mail_from_name || 'StreamRadar',
     discord_webhook_url: props.settings.discord_webhook_url || '',
+    telegram_bot_token: props.settings.telegram_bot_token || '',
+    telegram_chat_id: props.settings.telegram_chat_id || '',
     webhook_url: props.settings.webhook_url || '',
+    notifications_email_enabled: props.settings.notifications_email_enabled !== '0',
+    notifications_discord_enabled: props.settings.notifications_discord_enabled !== '0',
+    notifications_telegram_enabled: props.settings.notifications_telegram_enabled !== '0',
+    notifications_webhook_enabled: props.settings.notifications_webhook_enabled !== '0',
     auth_username: props.settings.auth_username || '',
     auth_password: '',
 });
@@ -71,6 +78,30 @@ async function testTwitch() {
     });
 }
 
+// Test notifications
+const testingEmail = ref(false);
+const testEmailResult = ref<{ success: boolean; message: string } | null>(null);
+const testingDiscord = ref(false);
+const testDiscordResult = ref<{ success: boolean; message: string } | null>(null);
+const testingTelegram = ref(false);
+const testTelegramResult = ref<{ success: boolean; message: string } | null>(null);
+const testingWebhook = ref(false);
+const testWebhookResult = ref<{ success: boolean; message: string } | null>(null);
+
+async function testNotification(channel: 'email' | 'discord' | 'telegram' | 'webhook') {
+    const loading = { email: testingEmail, discord: testingDiscord, telegram: testingTelegram, webhook: testingWebhook }[channel];
+    const result = { email: testEmailResult, discord: testDiscordResult, telegram: testTelegramResult, webhook: testWebhookResult }[channel];
+    loading.value = true; result.value = null;
+    try {
+        const { data } = await window.axios.post(`/settings/test-${channel}`);
+        result.value = data;
+    } catch (e: any) {
+        result.value = { success: false, message: e.response?.data?.message || e.message || 'Request failed' };
+    } finally {
+        loading.value = false;
+    }
+}
+
 // Disable auth
 const showDisableAuth = ref(false);
 const disablePassword = ref('');
@@ -114,6 +145,20 @@ function handleImport(e: Event) {
     router.post('/settings/import', formData as any, { preserveScroll: true, forceFormData: true });
 }
 
+// Version check
+const updateAvailable = ref(false);
+const localVersion = ref('');
+const remoteVersion = ref('');
+
+async function checkForUpdate() {
+    try {
+        const { data } = await window.axios.get('/settings/check-update');
+        updateAvailable.value = data.update_available;
+        localVersion.value = data.local_version || '';
+        remoteVersion.value = data.remote_version || '';
+    } catch {}
+}
+
 // Sidebar scroll spy
 const activeSection = ref('twitch');
 const sections = [
@@ -122,6 +167,7 @@ const sections = [
     { id: 'filters', label: 'Global Filters', icon: Filter },
     { id: 'email', label: 'Email / SMTP', icon: Mail },
     { id: 'discord', label: 'Discord', icon: MessageCircle },
+    { id: 'telegram', label: 'Telegram', icon: BotMessageSquare },
     { id: 'webhook', label: 'Webhook', icon: Webhook },
     { id: 'auth', label: 'Access', icon: Lock },
     { id: 'backup', label: 'Backup', icon: Download },
@@ -134,6 +180,7 @@ function scrollTo(id: string) {
 }
 
 onMounted(() => {
+    checkForUpdate();
     const observer = new IntersectionObserver((entries) => {
         for (const entry of entries) {
             if (entry.isIntersecting) {
@@ -172,6 +219,19 @@ onMounted(() => {
 
             <!-- Content -->
             <div class="flex-1 min-w-0 max-w-3xl space-y-6">
+                <!-- Update banner -->
+                <div v-if="updateAvailable" class="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl">
+                    <ArrowUpCircle class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                        <p class="text-sm font-medium text-amber-800 dark:text-amber-300">A new version of StreamRadar is available!</p>
+                        <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                            Current: <code class="px-1 py-0.5 bg-amber-100 dark:bg-amber-500/20 rounded">{{ localVersion }}</code>
+                            → Latest: <code class="px-1 py-0.5 bg-amber-100 dark:bg-amber-500/20 rounded">{{ remoteVersion }}</code>
+                        </p>
+                        <p class="text-xs text-amber-700 dark:text-amber-400 mt-2">To update (Docker):</p>
+                        <code class="block text-xs text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-500/20 rounded px-2 py-1 mt-1">git pull && docker compose up -d --build</code>
+                    </div>
+                </div>
                 <!-- Mobile section nav -->
                 <div class="lg:hidden sticky top-16 z-20 -mx-4 px-4 py-2 bg-gray-50/80 dark:bg-zinc-950/80 backdrop-blur-md">
                     <div class="flex gap-1.5 overflow-x-auto scrollbar-hide">
@@ -217,19 +277,16 @@ onMounted(() => {
                 <div id="section-sync" class="bg-white dark:bg-zinc-900 rounded-xl p-5 shadow-sm dark:shadow-none scroll-mt-24">
                     <div class="flex items-center gap-2 mb-4">
                         <RefreshCw class="w-5 h-5 text-purple-500" />
-                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Synchronization</h3>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Auto Synchronization</h3>
                     </div>
-                    <div>
+                    <label class="flex items-center gap-2 mb-4">
+                        <input type="checkbox" v-model="form.auto_sync_enabled" class="rounded text-purple-600 focus:ring-purple-500 bg-white dark:bg-zinc-800" />
+                        <span class="text-sm text-gray-700 dark:text-zinc-300">Enable automatic sync</span>
+                    </label>
+                    <div v-if="form.auto_sync_enabled">
                         <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Sync Frequency (minutes)</label>
                         <input v-model="form.sync_frequency_minutes" type="number" min="1" max="60"
                             class="w-32 px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
-                    </div>
-                    <div class="mt-3 p-3 rounded-lg bg-gray-50 dark:bg-zinc-800/50 text-xs text-gray-500 dark:text-zinc-400 space-y-1 flex items-start gap-2">
-                        <Terminal class="w-4 h-4 shrink-0 mt-0.5" />
-                        <div>
-                            <p>Schedule: <code class="text-purple-600 dark:text-purple-400">php artisan schedule:work</code></p>
-                            <p>Manual: <code class="text-purple-600 dark:text-purple-400">php artisan streams:sync</code></p>
-                        </div>
                     </div>
                 </div>
 
@@ -277,9 +334,15 @@ onMounted(() => {
 
                 <!-- Email / SMTP -->
                 <div id="section-email" class="bg-white dark:bg-zinc-900 rounded-xl p-5 shadow-sm dark:shadow-none scroll-mt-24">
-                    <div class="flex items-center gap-2 mb-4">
-                        <Mail class="w-5 h-5 text-purple-500" />
-                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Email / SMTP</h3>
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <Mail class="w-5 h-5 text-purple-500" />
+                            <h3 class="text-lg font-bold text-gray-900 dark:text-white">Email / SMTP</h3>
+                        </div>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" v-model="form.notifications_email_enabled" class="rounded text-purple-600 focus:ring-purple-500 bg-white dark:bg-zinc-800" />
+                            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400">Enabled</span>
+                        </label>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
@@ -327,13 +390,28 @@ onMounted(() => {
                                 class="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
                         </div>
                     </div>
+                    <div class="flex items-center gap-3 mt-4">
+                        <button @click="testNotification('email')" :disabled="testingEmail"
+                            class="px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-700 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                            <Loader2 v-if="testingEmail" class="w-3.5 h-3.5 animate-spin" />
+                            <Send v-else class="w-3.5 h-3.5" />
+                            {{ testingEmail ? 'Sending...' : 'Send Test Email' }}
+                        </button>
+                        <span v-if="testEmailResult" :class="testEmailResult.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm">{{ testEmailResult.message }}</span>
+                    </div>
                 </div>
 
                 <!-- Discord -->
                 <div id="section-discord" class="bg-white dark:bg-zinc-900 rounded-xl p-5 shadow-sm dark:shadow-none scroll-mt-24">
-                    <div class="flex items-center gap-2 mb-4">
-                        <MessageCircle class="w-5 h-5 text-purple-500" />
-                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Discord</h3>
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <MessageCircle class="w-5 h-5 text-purple-500" />
+                            <h3 class="text-lg font-bold text-gray-900 dark:text-white">Discord</h3>
+                        </div>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" v-model="form.notifications_discord_enabled" class="rounded text-purple-600 focus:ring-purple-500 bg-white dark:bg-zinc-800" />
+                            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400">Enabled</span>
+                        </label>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Webhook URL</label>
@@ -343,13 +421,66 @@ onMounted(() => {
                             Create a webhook in your Discord server: Server Settings &rarr; Integrations &rarr; Webhooks &rarr; New Webhook. Copy the URL and paste it here.
                         </p>
                     </div>
+                    <div class="flex items-center gap-3 mt-4">
+                        <button @click="testNotification('discord')" :disabled="testingDiscord"
+                            class="px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-700 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                            <Loader2 v-if="testingDiscord" class="w-3.5 h-3.5 animate-spin" />
+                            <Send v-else class="w-3.5 h-3.5" />
+                            {{ testingDiscord ? 'Sending...' : 'Send Test Message' }}
+                        </button>
+                        <span v-if="testDiscordResult" :class="testDiscordResult.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm">{{ testDiscordResult.message }}</span>
+                    </div>
+                </div>
+
+                <!-- Telegram -->
+                <div id="section-telegram" class="bg-white dark:bg-zinc-900 rounded-xl p-5 shadow-sm dark:shadow-none scroll-mt-24">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <BotMessageSquare class="w-5 h-5 text-purple-500" />
+                            <h3 class="text-lg font-bold text-gray-900 dark:text-white">Telegram</h3>
+                        </div>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" v-model="form.notifications_telegram_enabled" class="rounded text-purple-600 focus:ring-purple-500 bg-white dark:bg-zinc-800" />
+                            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400">Enabled</span>
+                        </label>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Bot Token</label>
+                            <input v-model="form.telegram_bot_token" type="password" :placeholder="settings.telegram_bot_token_masked || 'Paste token from @BotFather'"
+                                class="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Chat ID</label>
+                            <input v-model="form.telegram_chat_id" autocomplete="off" type="text" placeholder="Your numeric chat ID"
+                                class="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
+                        </div>
+                        <p class="text-xs text-gray-400 dark:text-zinc-500">
+                            Create a bot via <strong>@BotFather</strong> on Telegram, then send /start to your bot and enter the chat ID here.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-3 mt-4">
+                        <button @click="testNotification('telegram')" :disabled="testingTelegram"
+                            class="px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-700 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                            <Loader2 v-if="testingTelegram" class="w-3.5 h-3.5 animate-spin" />
+                            <Send v-else class="w-3.5 h-3.5" />
+                            {{ testingTelegram ? 'Sending...' : 'Send Test Message' }}
+                        </button>
+                        <span v-if="testTelegramResult" :class="testTelegramResult.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm">{{ testTelegramResult.message }}</span>
+                    </div>
                 </div>
 
                 <!-- Webhook -->
                 <div id="section-webhook" class="bg-white dark:bg-zinc-900 rounded-xl p-5 shadow-sm dark:shadow-none scroll-mt-24">
-                    <div class="flex items-center gap-2 mb-4">
-                        <Webhook class="w-5 h-5 text-purple-500" />
-                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Webhook</h3>
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <Webhook class="w-5 h-5 text-purple-500" />
+                            <h3 class="text-lg font-bold text-gray-900 dark:text-white">Webhook</h3>
+                        </div>
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" v-model="form.notifications_webhook_enabled" class="rounded text-purple-600 focus:ring-purple-500 bg-white dark:bg-zinc-800" />
+                            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400">Enabled</span>
+                        </label>
                     </div>
                     <div>
                         <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Webhook URL</label>
@@ -358,6 +489,15 @@ onMounted(() => {
                         <p class="mt-2 text-xs text-gray-400 dark:text-zinc-500">
                             Receives POST with JSON payload for every alert. Works with ntfy.sh, Zapier, Make, or any custom endpoint.
                         </p>
+                    </div>
+                    <div class="flex items-center gap-3 mt-4">
+                        <button @click="testNotification('webhook')" :disabled="testingWebhook"
+                            class="px-4 py-2 text-sm font-medium bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 rounded-lg hover:bg-gray-200 dark:hover:bg-zinc-700 disabled:opacity-50 transition-colors flex items-center gap-1.5">
+                            <Loader2 v-if="testingWebhook" class="w-3.5 h-3.5 animate-spin" />
+                            <Send v-else class="w-3.5 h-3.5" />
+                            {{ testingWebhook ? 'Sending...' : 'Send Test Webhook' }}
+                        </button>
+                        <span v-if="testWebhookResult" :class="testWebhookResult.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="text-sm">{{ testWebhookResult.message }}</span>
                     </div>
                 </div>
 

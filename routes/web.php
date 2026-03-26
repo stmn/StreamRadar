@@ -48,7 +48,12 @@ Route::delete('/history', [HistoryController::class, 'clear'])->name('history.cl
 Route::get('/settings', [SettingsController::class, 'index'])->name('settings.index');
 Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');
 Route::post('/settings/test-twitch', [SettingsController::class, 'testTwitch'])->name('settings.test-twitch');
+Route::post('/settings/test-email', [SettingsController::class, 'testEmail'])->name('settings.test-email');
+Route::post('/settings/test-discord', [SettingsController::class, 'testDiscord'])->name('settings.test-discord');
+Route::post('/settings/test-telegram', [SettingsController::class, 'testTelegram'])->name('settings.test-telegram');
+Route::post('/settings/test-webhook', [SettingsController::class, 'testWebhook'])->name('settings.test-webhook');
 Route::post('/settings/disable-auth', [SettingsController::class, 'disableAuth'])->name('settings.disable-auth');
+Route::get('/settings/check-update', [SettingsController::class, 'checkUpdate'])->name('settings.check-update');
 Route::get('/settings/export', [SettingsController::class, 'export'])->name('settings.export');
 Route::post('/settings/import', [SettingsController::class, 'import'])->name('settings.import');
 

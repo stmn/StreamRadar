@@ -15,7 +15,7 @@ const currentPath = computed(() => page.url.split('?')[0]);
 const tabs = computed(() => [
     { name: 'Streams', href: '/', match: '/', icon: Radio, count: props.stats.streams_count },
     { name: 'Tracking', href: '/tracking', match: '/tracking', icon: LayoutGrid, count: props.stats.categories_count },
-    { name: 'Alerts', href: '/alerts', match: '/alerts', icon: Bell, count: null },
+    { name: 'Alerts', href: '/alerts', match: '/alerts', icon: Bell, count: props.stats.alerts_count },
     { name: 'Blacklist', href: '/blacklist', match: '/blacklist', icon: ShieldBan, count: props.stats.blacklist_count },
     { name: 'History', href: '/history', match: '/history', icon: Clock, count: null },
     { name: 'Settings', href: '/settings', match: '/settings', icon: Settings, count: null },

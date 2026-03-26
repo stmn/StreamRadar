@@ -76,7 +76,7 @@ class TrackingController extends Controller
 
         if ($twitch->isConfigured()) {
             try {
-                $sync->syncCategory($category);
+                $sync->syncCategory($category, silentAlerts: true);
             } catch (\Exception $e) {
                 // Sync will catch up later
             }
@@ -117,6 +117,7 @@ class TrackingController extends Controller
         }
 
         $result = $sync->syncCategory($category);
+        $sync->getAlertService()->sendNotifications($result['triggered_alerts']);
 
         return back()->with('success', "\"{$category->name}\" synced — {$result['new']} new, {$result['updated']} updated.");
     }
@@ -161,7 +162,7 @@ class TrackingController extends Controller
         // Sync immediately
         if ($twitch->isConfigured()) {
             try {
-                $sync->syncTrackedChannels();
+                $sync->syncTrackedChannels(silentAlerts: true);
             } catch (\Exception $e) {
                 // Will catch up
             }

@@ -10,6 +10,8 @@ use App\Services\TwitchApiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -18,6 +20,7 @@ class SettingsController extends Controller
     private const SETTING_KEYS = [
         'twitch_client_id',
         'twitch_client_secret',
+        'auto_sync_enabled',
         'sync_frequency_minutes',
         'global_min_viewers',
         'global_languages',
@@ -32,7 +35,13 @@ class SettingsController extends Controller
         'mail_from_address',
         'mail_from_name',
         'discord_webhook_url',
+        'telegram_bot_token',
+        'telegram_chat_id',
         'webhook_url',
+        'notifications_email_enabled',
+        'notifications_discord_enabled',
+        'notifications_telegram_enabled',
+        'notifications_webhook_enabled',
         'auth_username',
     ];
 
@@ -46,9 +55,12 @@ class SettingsController extends Controller
             'theme' => 'system',
         ]);
 
-        // Mask secret
+        // Mask secrets
         if (! empty($settings['twitch_client_secret'])) {
             $settings['twitch_client_secret_masked'] = str_repeat('*', 8).substr($settings['twitch_client_secret'], -4);
+        }
+        if (! empty($settings['telegram_bot_token'])) {
+            $settings['telegram_bot_token_masked'] = str_repeat('*', 8).substr($settings['telegram_bot_token'], -4);
         }
 
         $settings['auth_enabled'] = ! empty(Setting::get('auth_username')) && ! empty(Setting::get('auth_password'));
@@ -69,9 +81,12 @@ class SettingsController extends Controller
             }
         }
 
-        // Don't overwrite secret with masked version
+        // Don't overwrite secrets with masked versions
         if (isset($data['twitch_client_secret']) && str_starts_with($data['twitch_client_secret'], '***')) {
             unset($data['twitch_client_secret']);
+        }
+        if (isset($data['telegram_bot_token']) && str_starts_with($data['telegram_bot_token'], '***')) {
+            unset($data['telegram_bot_token']);
         }
 
         // Handle auth password separately (hash it)
@@ -179,6 +194,238 @@ class SettingsController extends Controller
         return response()->json($twitch->testConnection());
     }
 
+    public function testEmail(TwitchApiService $twitch): JsonResponse
+    {
+        $recipient = Setting::get('mail_to');
+        if (! $recipient) {
+            return response()->json(['success' => false, 'message' => 'No recipient email configured.']);
+        }
+
+        $this->updateMailConfig();
+
+        try {
+            $alerts = $this->buildTestAlerts($twitch);
+            Mail::to($recipient)->send(new \App\Mail\StreamAlertMail($alerts));
+
+            return response()->json(['success' => true, 'message' => "Test email sent to {$recipient}."]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    public function testDiscord(TwitchApiService $twitch): JsonResponse
+    {
+        $webhookUrl = Setting::get('discord_webhook_url');
+        if (! $webhookUrl) {
+            return response()->json(['success' => false, 'message' => 'No Discord webhook URL configured.']);
+        }
+
+        $fake = $this->pickTestStream($twitch);
+
+        try {
+            $response = Http::post($webhookUrl, [
+                'embeds' => [[
+                    'title' => "{$fake['user_name']} is live!",
+                    'url' => "https://www.twitch.tv/{$fake['user_login']}",
+                    'description' => $fake['title'],
+                    'color' => 0x9147ff,
+                    'fields' => [
+                        ['name' => 'Category', 'value' => $fake['game'], 'inline' => true],
+                        ['name' => 'Viewers', 'value' => number_format($fake['viewers']), 'inline' => true],
+                        ['name' => 'Language', 'value' => strtoupper($fake['language']), 'inline' => true],
+                    ],
+                    'thumbnail' => ['url' => $fake['avatar']],
+                    'footer' => ['text' => "Alert: {$fake['rule']} (test)"],
+                    'timestamp' => now()->toIso8601String(),
+                ]],
+            ]);
+
+            if ($response->successful()) {
+                return response()->json(['success' => true, 'message' => 'Test message sent to Discord.']);
+            }
+
+            return response()->json(['success' => false, 'message' => "Discord returned HTTP {$response->status()}."]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    public function testTelegram(TwitchApiService $twitch): JsonResponse
+    {
+        $token = Setting::get('telegram_bot_token');
+        $chatId = Setting::get('telegram_chat_id');
+        if (! $token || ! $chatId) {
+            return response()->json(['success' => false, 'message' => 'Telegram bot token or chat ID not configured.']);
+        }
+
+        $fake = $this->pickTestStream($twitch);
+        $viewers = number_format($fake['viewers']);
+        $url = "https://www.twitch.tv/{$fake['user_login']}";
+
+        $text = "<b>🔴 {$fake['user_name']} is live!</b>\n"
+            ."{$fake['title']}\n\n"
+            ."🎮 {$fake['game']} · 👁 {$viewers} · 🌐 ".strtoupper($fake['language'])."\n"
+            ."📋 Alert: {$fake['rule']} (test)\n\n"
+            ."<a href=\"{$url}\">Watch on Twitch →</a>";
+
+        try {
+            $response = Http::post("https://api.telegram.org/bot{$token}/sendMessage", [
+                'chat_id' => $chatId,
+                'text' => $text,
+                'parse_mode' => 'HTML',
+                'disable_web_page_preview' => false,
+            ]);
+
+            if ($response->json('ok')) {
+                return response()->json(['success' => true, 'message' => 'Test message sent to Telegram.']);
+            }
+
+            return response()->json(['success' => false, 'message' => $response->json('description', 'Unknown error')]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    public function testWebhook(TwitchApiService $twitch): JsonResponse
+    {
+        $webhookUrl = Setting::get('webhook_url');
+        if (! $webhookUrl) {
+            return response()->json(['success' => false, 'message' => 'No webhook URL configured.']);
+        }
+
+        $fake = $this->pickTestStream($twitch);
+
+        try {
+            $response = Http::post($webhookUrl, [
+                'event' => 'stream.alert',
+                'rule' => $fake['rule'].' (test)',
+                'channel' => $fake['user_name'],
+                'channel_login' => $fake['user_login'],
+                'title' => $fake['title'],
+                'game' => $fake['game'],
+                'viewers' => $fake['viewers'],
+                'language' => $fake['language'],
+                'url' => "https://www.twitch.tv/{$fake['user_login']}",
+                'thumbnail' => null,
+                'avatar' => $fake['avatar'],
+                'started_at' => now()->subMinutes(rand(5, 120))->toIso8601String(),
+                'is_mature' => false,
+                'tags' => ['English', $fake['game']],
+                'is_test' => true,
+            ]);
+
+            return response()->json(['success' => true, 'message' => "Webhook responded with HTTP {$response->status()}."]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()]);
+        }
+    }
+
+    private function buildTestAlerts(TwitchApiService $twitch): array
+    {
+        $fakeStreams = collect($this->testStreamTemplates())->random(2);
+        $logins = $fakeStreams->pluck('user_login')->toArray();
+        $avatarMap = $this->fetchAvatars($twitch, $logins);
+
+        return $fakeStreams->map(function ($s) use ($avatarMap) {
+            $stream = new \App\Models\Stream([
+                'user_login' => $s['user_login'],
+                'user_name' => $s['user_name'],
+                'title' => $s['title'],
+                'viewer_count' => $s['viewers'],
+                'language' => $s['language'],
+                'game_name' => $s['game'],
+                'profile_image_url' => $avatarMap[$s['user_login']] ?? null,
+                'started_at' => now()->subMinutes(rand(5, 120)),
+            ]);
+
+            return ['rule' => new \App\Models\AlertRule(['name' => $s['rule']]), 'stream' => $stream];
+        })->toArray();
+    }
+
+    private function pickTestStream(TwitchApiService $twitch): array
+    {
+        $s = collect($this->testStreamTemplates())->random();
+        $avatarMap = $this->fetchAvatars($twitch, [$s['user_login']]);
+        $s['avatar'] = $avatarMap[$s['user_login']] ?? null;
+
+        return $s;
+    }
+
+    private function fetchAvatars(TwitchApiService $twitch, array $logins): array
+    {
+        try {
+            $users = $twitch->getUsers($logins);
+
+            return collect($users)->mapWithKeys(fn ($u) => [
+                $u['login'] => $u['profile_image_url'] ?? null,
+            ])->toArray();
+        } catch (\Exception) {
+            return [];
+        }
+    }
+
+    private function testStreamTemplates(): array
+    {
+        return [
+            [
+                'user_login' => 'shroud', 'user_name' => 'shroud',
+                'title' => 'VALORANT Ranked Grind — Road to Radiant',
+                'game' => 'VALORANT', 'viewers' => 42_831, 'language' => 'en',
+                'rule' => 'FPS Streams',
+            ],
+            [
+                'user_login' => 'pokimane', 'user_name' => 'pokimane',
+                'title' => 'cozy morning stream — chatting & games',
+                'game' => 'Just Chatting', 'viewers' => 28_445, 'language' => 'en',
+                'rule' => 'Favorite Streamers',
+            ],
+            [
+                'user_login' => 'caedrel', 'user_name' => 'Caedrel',
+                'title' => 'LEC Watch Party — Playoffs Day 2',
+                'game' => 'League of Legends', 'viewers' => 55_210, 'language' => 'en',
+                'rule' => 'LoL Esports',
+            ],
+            [
+                'user_login' => 'jynxzi', 'user_name' => 'Jynxzi',
+                'title' => 'RAINBOW SIX SIEGE — Going for Diamond!!',
+                'game' => 'Tom Clancy\'s Rainbow Six Siege', 'viewers' => 31_672, 'language' => 'en',
+                'rule' => 'FPS Streams',
+            ],
+            [
+                'user_login' => 'ibai', 'user_name' => 'ibai',
+                'title' => 'LA VELADA DEL AÑO 4 — PREPARACION',
+                'game' => 'Just Chatting', 'viewers' => 112_300, 'language' => 'es',
+                'rule' => 'Big Spanish Streams',
+            ],
+        ];
+    }
+
+    public function checkUpdate(): JsonResponse
+    {
+        try {
+            $localHash = trim(shell_exec('git -C '.base_path().' rev-parse HEAD 2>/dev/null') ?: '');
+            if (! $localHash) {
+                return response()->json(['update_available' => false]);
+            }
+
+            $response = Http::timeout(5)->get('https://api.github.com/repos/stmn/StreamRadar/commits/main');
+            if (! $response->successful()) {
+                return response()->json(['update_available' => false]);
+            }
+
+            $remoteHash = $response->json('sha');
+            $updateAvailable = $remoteHash && $localHash !== $remoteHash;
+
+            return response()->json([
+                'update_available' => $updateAvailable,
+                'local_version' => substr($localHash, 0, 7),
+                'remote_version' => $remoteHash ? substr($remoteHash, 0, 7) : null,
+            ]);
+        } catch (\Exception) {
+            return response()->json(['update_available' => false]);
+        }
+    }
+
     private function updateMailConfig(): void
     {
         $host = Setting::get('smtp_host');
@@ -187,11 +434,12 @@ class SettingsController extends Controller
         }
 
         config([
+            'mail.default' => 'smtp',
             'mail.mailers.smtp.host' => $host,
             'mail.mailers.smtp.port' => Setting::get('smtp_port', 587),
-            'mail.mailers.smtp.username' => Setting::get('smtp_username'),
-            'mail.mailers.smtp.password' => Setting::get('smtp_password'),
-            'mail.mailers.smtp.encryption' => Setting::get('smtp_encryption', 'tls'),
+            'mail.mailers.smtp.username' => Setting::get('smtp_username') ?: null,
+            'mail.mailers.smtp.password' => Setting::get('smtp_password') ?: null,
+            'mail.mailers.smtp.encryption' => Setting::get('smtp_encryption') ?: null,
             'mail.from.address' => Setting::get('mail_from_address'),
             'mail.from.name' => Setting::get('mail_from_name', 'StreamRadar'),
         ]);

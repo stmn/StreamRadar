@@ -99,6 +99,8 @@ const types = Object.keys(typeConfig);
                     <p v-if="event.title" class="text-xs text-gray-500 dark:text-zinc-500 truncate mt-0.5">
                         {{ event.title }}
                         <span v-if="event.category_name" class="text-purple-500 dark:text-purple-400"> — {{ event.category_name }}</span>
+                        <span v-if="event.metadata?.rule_names" class="text-amber-500 dark:text-amber-400"> ({{ event.metadata.rule_names.join(', ') }})</span>
+                        <span v-else-if="event.metadata?.rule_name" class="text-amber-500 dark:text-amber-400"> ({{ event.metadata.rule_name }})</span>
                     </p>
                 </div>
                 <div class="text-right shrink-0">

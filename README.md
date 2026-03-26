@@ -21,7 +21,7 @@ StreamRadar watches the categories and channels you pick, checks for new streams
 - **Track categories** — follow Twitch game categories (e.g. "Just Chatting", "Fortnite")
 - **Track channels** — follow specific Twitch channels regardless of what they stream
 - **Live dashboard** — see all live streams in one place with sorting, grouping, and filtering
-- **Alerts** — get notified when streams go live via email, Discord webhook, or generic webhook
+- **Alerts** — get notified when streams go live via email, Discord, Telegram, or generic webhook
 - **Blacklist** — block channels, keywords, or tags from appearing in results
 - **Dark / Light mode** — system-aware theme with manual toggle
 - **Pin streams** — pin your favorites to the top
@@ -38,14 +38,14 @@ You only need [Docker Desktop](https://www.docker.com/products/docker-desktop/) 
 
 **Windows** — open PowerShell or Command Prompt and paste:
 ```
-curl -fsSL https://raw.githubusercontent.com/your-user/streamradar/main/install.bat -o install.bat && install.bat
+curl -fsSL https://raw.githubusercontent.com/stmn/StreamRadar/main/install.bat -o install.bat && install.bat
 ```
 
-Or [download install.bat](https://raw.githubusercontent.com/your-user/streamradar/main/install.bat) and double-click it.
+Or [download install.bat](https://raw.githubusercontent.com/stmn/StreamRadar/main/install.bat) and double-click it.
 
 **Mac / Linux** — open Terminal and paste:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-user/streamradar/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/stmn/StreamRadar/main/install.sh | bash
 ```
 
 That's it. Open **http://localhost:8080** in your browser.
@@ -55,7 +55,7 @@ That's it. Open **http://localhost:8080** in your browser.
 If you prefer to do it yourself:
 
 ```bash
-git clone https://github.com/your-user/streamradar.git
+git clone https://github.com/stmn/StreamRadar.git
 cd streamradar
 docker compose up -d
 ```
@@ -75,7 +75,7 @@ Everything is automatic — database, encryption keys, and migrations are set up
 Requirements: PHP 8.3+, Composer, Node.js 20+, npm
 
 ```bash
-git clone https://github.com/your-user/streamradar.git
+git clone https://github.com/stmn/StreamRadar.git
 cd streamradar
 
 # Install dependencies
@@ -141,9 +141,9 @@ StreamRadar needs a Twitch API key to fetch stream data. Don't worry — it only
 1. Go to the **Alerts** tab
 2. Click **New Alert**
 3. Configure what you want to be notified about
-4. Choose notification method: Email and/or Discord
+4. Choose notification channels: Email, Discord, Telegram, and/or Webhook
 
-For Discord alerts, paste your Discord webhook URL in **Settings** → **Discord**.
+Configure each channel in **Settings** first (SMTP for Email, webhook URL for Discord, bot token for Telegram, endpoint URL for Webhook).
 
 ---
 
@@ -155,6 +155,7 @@ StreamRadar can send alerts through multiple channels:
 |--------|-------|
 | **Email** | Settings → Email/SMTP. Works with any SMTP server, Gmail, Mailgun, etc. |
 | **Discord** | Settings → Discord. Paste a [webhook URL](https://support.discord.com/hc/en-us/articles/228383668) from your server. |
+| **Telegram** | Settings → Telegram. Create a bot via [@BotFather](https://t.me/BotFather), copy the bot token, send `/start` to the bot, then enter the bot token and your chat ID. To find your chat ID, message [@userinfobot](https://t.me/userinfobot). |
 | **Webhook** | Settings → Webhook. POST JSON to any URL — works with [ntfy.sh](https://ntfy.sh), Zapier, Make, or your own endpoint. |
 
 ---
@@ -190,11 +191,47 @@ php artisan auth:reset
 
 ---
 
-## Backup & Restore
+## Running 24/7
 
-Go to **Settings** → **Backup**:
-- **Export** — downloads a JSON file with all your settings, tracked categories, channels, and blacklist rules
-- **Import** — upload a previously exported JSON file to restore everything
+To keep StreamRadar running continuously (including after system restarts):
+
+**Docker (recommended):** The `docker-compose.yml` already includes `restart: unless-stopped`, so the container will automatically restart after a system reboot — as long as Docker itself starts on boot.
+
+- **Windows:** Docker Desktop starts with Windows by default. Check Docker Desktop → Settings → General → "Start Docker Desktop when you sign in".
+- **Mac:** Docker Desktop starts automatically. Check Docker Desktop → Settings → General → "Start Docker Desktop when you log in".
+- **Linux:** Enable the Docker service:
+  ```bash
+  sudo systemctl enable docker
+  ```
+
+**Manual installation (without Docker):** Use a process manager or system service:
+
+- **Linux (systemd):**
+  ```bash
+  # Create /etc/systemd/system/streamradar.service
+  [Unit]
+  Description=StreamRadar
+  After=network.target
+
+  [Service]
+  Type=simple
+  User=www-data
+  WorkingDirectory=/path/to/streamradar
+  ExecStart=/usr/bin/php artisan serve --host=0.0.0.0 --port=8080
+  Restart=always
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+  Then: `sudo systemctl enable --now streamradar`
+
+- **Mac (launchd):** Use `launchctl` or a tool like [pm2](https://pm2.keymetrics.io/):
+  ```bash
+  npm install -g pm2
+  pm2 start "php artisan serve --port=8080" --name streamradar
+  pm2 startup   # generates auto-start config
+  pm2 save
+  ```
 
 ---
 

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\AlertRule;
 use App\Models\Category;
 use App\Models\BlacklistRule;
 use App\Models\Setting;
@@ -25,6 +26,7 @@ class HandleInertiaRequests extends Middleware
             'stats' => fn () => [
                 'categories_count' => Category::where('is_active', true)->count(),
                 'streams_count' => Stream::count(),
+                'alerts_count' => AlertRule::where('is_active', true)->count(),
                 'blacklist_count' => BlacklistRule::count(),
             ],
             'appSettings' => fn () => [

@@ -15,6 +15,8 @@ class HistoryController extends Controller
 
         if ($request->filled('type')) {
             $query->ofType($request->input('type'));
+        } else {
+            $query->where('type', '!=', 'sync_completed');
         }
 
         if ($request->filled('search')) {

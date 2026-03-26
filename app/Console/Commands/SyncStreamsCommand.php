@@ -21,6 +21,13 @@ class SyncStreamsCommand extends Command
             return self::FAILURE;
         }
 
+        // Check if auto sync is enabled (skip if --force)
+        if (! $this->option('force') && Setting::get('auto_sync_enabled', '1') === '0') {
+            $this->line('Auto sync is disabled.');
+
+            return self::SUCCESS;
+        }
+
         // Check sync frequency (skip if --force)
         if (! $this->option('force')) {
             $lastSync = Setting::get('last_sync_at');
