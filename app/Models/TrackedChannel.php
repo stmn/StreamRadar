@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class TrackedChannel extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'twitch_user_id',
         'user_login',

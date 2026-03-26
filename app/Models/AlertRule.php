@@ -2,12 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AlertRule extends Model
 {
+    use HasFactory;
     protected $fillable = [
         'name',
         'streamer_login',
@@ -18,6 +20,10 @@ class AlertRule extends Model
         'keywords',
         'notify_email',
         'notify_discord',
+        'notify_telegram',
+        'notify_webhook',
+        'notify_on_category_change',
+        'notify_on_stream_start',
         'is_active',
     ];
 
@@ -28,6 +34,10 @@ class AlertRule extends Model
             'keywords' => 'array',
             'notify_email' => 'boolean',
             'notify_discord' => 'boolean',
+            'notify_telegram' => 'boolean',
+            'notify_webhook' => 'boolean',
+            'notify_on_category_change' => 'boolean',
+            'notify_on_stream_start' => 'boolean',
             'is_active' => 'boolean',
         ];
     }
@@ -40,6 +50,11 @@ class AlertRule extends Model
     public function trackings(): HasMany
     {
         return $this->hasMany(StreamAlertTracking::class);
+    }
+
+    public function latestTracking(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(StreamAlertTracking::class)->whereNotNull('triggered_at')->latestOfMany('triggered_at');
     }
 
     public function isForSpecificStreamer(): bool

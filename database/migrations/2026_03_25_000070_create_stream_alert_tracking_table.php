@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('alert_rule_id')->constrained()->cascadeOnDelete();
             $table->string('stream_twitch_id');
             $table->string('streamer_login');
-            $table->timestamp('triggered_at');
+            $table->timestamp('triggered_at')->nullable();
             $table->unique(['alert_rule_id', 'stream_twitch_id']);
         });
     }
