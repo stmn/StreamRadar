@@ -4,10 +4,21 @@ services:
     ports:
       - "${APP_PORT:-8080}:80"
     volumes:
-      - ./data:/app/database
+      - ./database:/app/database
     environment:
       - APP_ENV=production
       - APP_DEBUG=false
       - APP_URL=http://localhost:${APP_PORT:-8080}
+      - MAIL_MAILER=smtp
+      - MAIL_HOST=mailpit
+      - MAIL_PORT=1025
+    depends_on:
+      - mailpit
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "${MAILPIT_PORT:-8025}:8025"
     restart: unless-stopped
 

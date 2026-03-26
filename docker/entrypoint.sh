@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+# Create .env from .env.example if missing
+if [ ! -f /app/.env ]; then
+    cp /app/.env.example /app/.env
+fi
+
 # Generate APP_KEY if not set
 if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "" ]; then
     if grep -q "^APP_KEY=$" /app/.env 2>/dev/null || ! grep -q "^APP_KEY=" /app/.env 2>/dev/null; then
@@ -14,13 +19,22 @@ if [ ! -f /app/database/database.sqlite ]; then
 fi
 chown www-data:www-data /app/database/database.sqlite
 
+# Fix storage permissions
+chown -R www-data:www-data /app/storage /app/bootstrap/cache
+
 # Run migrations
 php /app/artisan migrate --force --no-interaction
 
-# Cache for production
-php /app/artisan config:cache
-php /app/artisan route:cache
-php /app/artisan view:cache
+# Cache only in production
+if [ "$APP_ENV" = "production" ]; then
+    php /app/artisan config:cache
+    php /app/artisan route:cache
+    php /app/artisan view:cache
+else
+    php /app/artisan config:clear 2>/dev/null || true
+    php /app/artisan route:clear 2>/dev/null || true
+    php /app/artisan view:clear 2>/dev/null || true
+fi
 
 echo ""
 echo "  StreamRadar is ready!"
