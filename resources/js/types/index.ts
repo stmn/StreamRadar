@@ -45,8 +45,12 @@ export interface AlertRule {
     min_viewers: number | null;
     language: string | null;
     keywords: string[] | null;
-    notify_browser: boolean;
     notify_email: boolean;
+    notify_discord: boolean;
+    notify_telegram: boolean;
+    notify_webhook: boolean;
+    notify_on_category_change: boolean;
+    notify_on_stream_start: boolean;
     is_active: boolean;
     created_at: string;
 }
@@ -102,6 +106,7 @@ export interface BlacklistRule {
 export interface Stats {
     categories_count: number;
     streams_count: number;
+    alerts_count: number;
     blacklist_count: number;
 }
 
