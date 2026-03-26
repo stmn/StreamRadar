@@ -6,12 +6,14 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import StreamCard from '@/components/StreamCard.vue';
 import LanguageFlag from '@/components/LanguageFlag.vue';
 import { useNow } from '@/composables/useNow';
+import { twitchCategoryUrl } from '@/composables/useTwitch';
 import type { Stream, Category } from '@/types';
 
 interface StreamGroup {
     name: string;
     boxArtUrl: string | null;
     streams: Stream[];
+    tracked: boolean;
 }
 
 const props = defineProps<{
@@ -52,6 +54,7 @@ function toggleGroup(key: string) {
     collapsed.value[key] = !collapsed.value[key];
     localStorage.setItem('sp_collapsed', JSON.stringify(collapsed.value));
 }
+
 
 const groupLimits = ref<Record<string, number>>({});
 function groupVisible(group: StreamGroup): Stream[] {
@@ -119,8 +122,10 @@ const groupedStreams = computed<StreamGroup[]>(() => {
     const map = new Map<string, StreamGroup>();
     for (const stream of sortedStreams.value) {
         const name = stream.game_name || stream.category?.name || 'No category';
-        if (!map.has(name)) map.set(name, { name, boxArtUrl: stream.game_box_art_url || stream.category?.box_art_url || null, streams: [] });
-        map.get(name)!.streams.push(stream);
+        if (!map.has(name)) map.set(name, { name, boxArtUrl: stream.game_box_art_url || stream.category?.box_art_url || null, streams: [], tracked: false });
+        const group = map.get(name)!;
+        group.streams.push(stream);
+        if (stream.category?.is_active) group.tracked = true;
     }
     const groups = Array.from(map.values());
     const sort = props.filters.sort;
@@ -237,15 +242,16 @@ const sortOptions = [
         <!-- Grouped View -->
         <template v-else-if="isGrouped && groupedStreams.length">
             <div v-for="group in groupedStreams" :key="group.name" class="mb-4">
-                <button @click="toggleGroup(group.name)"
-                    class="w-full flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none hover:bg-gray-50 dark:hover:bg-zinc-800/60 transition-colors mb-2">
+                <div class="w-full flex items-center gap-3 p-3 rounded-xl bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none mb-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-zinc-800/60 transition-colors" @click="toggleGroup(group.name)">
                     <img v-if="group.boxArtUrl" :src="group.boxArtUrl.replace('{width}', '40').replace('{height}', '54')" :alt="group.name" class="w-8 h-10 rounded object-cover" />
-                    <h2 class="text-base font-bold text-gray-900 dark:text-white flex-1 text-left">{{ group.name }}</h2>
-                    <span class="text-sm text-gray-400 dark:text-zinc-500">
+                    <a :href="twitchCategoryUrl(group.name)" target="_blank" @click.stop class="text-base font-bold text-gray-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 transition-colors truncate">{{ group.name }}</a>
+                    <span v-if="!group.tracked" class="px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 rounded shrink-0">Not tracked</span>
+                    <span class="flex-1"></span>
+                    <span class="text-sm text-gray-400 dark:text-zinc-500 shrink-0">
                         {{ group.streams.length }} streams &middot; {{ group.streams.reduce((s, x) => s + x.viewer_count, 0).toLocaleString() }} viewers
                     </span>
-                    <ChevronDown class="w-4 h-4 text-gray-400 transition-transform duration-200" :class="{ 'rotate-180': collapsed[group.name] }" />
-                </button>
+                    <ChevronDown class="w-4 h-4 text-gray-400 transition-transform duration-200 shrink-0" :class="{ 'rotate-180': collapsed[group.name] }" />
+                </div>
                 <div v-show="!collapsed[group.name]">
                     <div v-if="density === 'compact'" class="rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none divide-y divide-gray-100/60 dark:divide-zinc-800/60">
                         <StreamCard v-for="stream in groupVisible(group)" :key="stream.id" :stream="stream" :is-new="isNewStream(stream)" :is-tracked-channel="trackedLogins.includes(stream.user_login)" :is-pinned="pinnedLogins.includes(stream.user_login)" @toggle-pin="togglePin" :now="now" compact />

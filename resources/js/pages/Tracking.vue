@@ -4,6 +4,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { Search, Pencil, Trash2, X, Package, Loader2, Plus, Check, ArrowUpDown, RefreshCw, LayoutGrid, User } from 'lucide-vue-next';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { Category } from '@/types';
+import { twitchCategoryUrl } from '@/composables/useTwitch';
 
 interface TrackedChannel {
     id: number;
@@ -86,6 +87,7 @@ function addKw() { const v = kwInput.value.trim(); if (v && !editForm.keywords.i
 function removeKw(k: string) { editForm.keywords = editForm.keywords.filter(x => x !== k); }
 
 function boxArt(url: string | null, w = 80, h = 107): string { if (!url) return ''; return url.replace('{width}', String(w)).replace('{height}', String(h)); }
+
 const totalViewers = (cat: any) => cat.streams_sum_viewer_count ?? 0;
 
 // ---- Channels ----
@@ -179,7 +181,7 @@ function deleteChannel(ch: TrackedChannel) { router.delete(`/tracking/channels/$
                                 <div v-else class="w-14 h-18 bg-gray-200 dark:bg-zinc-700 rounded-lg shrink-0"></div>
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
-                                        <h3 class="font-semibold text-gray-900 dark:text-white truncate">{{ cat.name }}</h3>
+                                        <a :href="twitchCategoryUrl(cat.name)" target="_blank" class="font-semibold text-gray-900 dark:text-white truncate hover:text-purple-600 dark:hover:text-purple-400 transition-colors">{{ cat.name }}</a>
                                         <span v-if="!cat.is_active" class="px-1.5 py-0.5 text-[10px] font-medium bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 rounded">PAUSED</span>
                                     </div>
                                     <div class="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-zinc-500">

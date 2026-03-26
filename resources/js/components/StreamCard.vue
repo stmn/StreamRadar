@@ -3,6 +3,7 @@ import { router } from '@inertiajs/vue3';
 import { ExternalLink, ShieldBan, UserMinus, UserPlus, Eye, Clock, Pin, PinOff } from 'lucide-vue-next';
 import LanguageFlag from '@/components/LanguageFlag.vue';
 import type { Stream } from '@/types';
+import { twitchCategoryUrl } from '@/composables/useTwitch';
 
 const props = defineProps<{
     stream: Stream;
@@ -63,7 +64,7 @@ function trackChannel() {
                 <span v-if="stream.is_mature" class="px-1.5 py-0.5 text-[9px] font-bold bg-red-900 text-red-200 rounded uppercase leading-none">Mature</span>
                 <span class="font-medium text-sm text-gray-900 dark:text-white truncate">{{ stream.user_name }}</span>
                 <LanguageFlag v-if="stream.language" :code="stream.language" class="hidden md:inline-block" />
-                <span v-if="stream.game_name || stream.category" class="text-xs text-purple-600 dark:text-purple-400 truncate">{{ stream.game_name || stream.category?.name }}</span>
+                <a v-if="stream.game_name || stream.category" :href="twitchCategoryUrl(stream.game_name || stream.category?.name || '')" target="_blank" class="text-xs text-purple-600 dark:text-purple-400 truncate hover:underline">{{ stream.game_name || stream.category?.name }}</a>
             </div>
             <p class="text-xs text-gray-500 dark:text-zinc-500 truncate">{{ stream.title }}</p>
         </a>
@@ -143,7 +144,7 @@ function trackChannel() {
                         <LanguageFlag v-if="stream.language" :code="stream.language" />
                     </div>
                     <div v-if="stream.game_name || stream.category" class="mt-0.5">
-                        <span class="text-xs text-purple-600 dark:text-purple-400">{{ stream.game_name || stream.category?.name }}</span>
+                        <a :href="twitchCategoryUrl(stream.game_name || stream.category?.name || '')" target="_blank" class="text-xs text-purple-600 dark:text-purple-400 hover:underline">{{ stream.game_name || stream.category?.name }}</a>
                     </div>
                 </div>
             </div>
