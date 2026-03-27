@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { Search, Clock, Radio, WifiOff, Bell, RefreshCw, Trash2, Eye } from 'lucide-vue-next';
 import AppLayout from '@/layouts/AppLayout.vue';
+import ConfirmModal from '@/components/ConfirmModal.vue';
 import { useNow } from '@/composables/useNow';
 import { twitchCategoryUrl } from '@/composables/useTwitch';
 import type { HistoryEvent, PaginatedData } from '@/types';
@@ -30,7 +31,8 @@ function filterByType(type: string | null) {
     router.get('/history', params, { preserveState: true, preserveScroll: true });
 }
 
-function clearHistory() { router.delete('/history', { preserveScroll: true }); }
+const showClearConfirm = ref(false);
+function clearHistory() { router.delete('/history', { preserveScroll: true, onSuccess: () => { showClearConfirm.value = false; } }); }
 
 const now = useNow();
 
@@ -70,7 +72,7 @@ const types = Object.keys(typeConfig);
     <AppLayout>
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white">History</h2>
-            <button v-if="events.total > 0" @click="clearHistory"
+            <button v-if="events.total > 0" @click="showClearConfirm = true"
                 class="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors flex items-center gap-1.5">
                 <Trash2 class="w-4 h-4" /> Clear All
             </button>
@@ -156,5 +158,6 @@ const types = Object.keys(typeConfig);
                     v-html="link.label" />
             </template>
         </div>
+        <ConfirmModal :show="showClearConfirm" title="Clear all history?" message="All events will be permanently deleted." confirm-label="Clear All" @confirm="clearHistory" @cancel="showClearConfirm = false" />
     </AppLayout>
 </template>

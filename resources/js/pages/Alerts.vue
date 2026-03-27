@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import { Plus, Bell, Trash2, CheckCircle, XCircle, X, AlertTriangle, Pencil, ChevronDown } from 'lucide-vue-next';
 import AppLayout from '@/layouts/AppLayout.vue';
+import ConfirmModal from '@/components/ConfirmModal.vue';
 import type { AlertRule, Category } from '@/types';
 
 const props = defineProps<{ alertRules: AlertRule[]; categories: Category[]; emailConfigured: boolean; discordConfigured: boolean; telegramConfigured: boolean; webhookConfigured: boolean }>();
@@ -112,7 +113,8 @@ function saveEdit(rule: AlertRule) {
 
 // ── Actions ─────────────────────────────────────────────────────────
 function toggleActive(rule: AlertRule) { router.put(`/alerts/${rule.id}`, { is_active: !rule.is_active }, { preserveScroll: true }); }
-function deleteRule(rule: AlertRule) { router.delete(`/alerts/${rule.id}`, { preserveScroll: true }); }
+const deletingRule = ref<AlertRule | null>(null);
+function deleteRule() { if (!deletingRule.value) return; router.delete(`/alerts/${deletingRule.value.id}`, { preserveScroll: true, onSuccess: () => { deletingRule.value = null; } }); }
 
 function formatTime(dateStr: string): string {
     const d = new Date(dateStr);
@@ -340,7 +342,7 @@ function unconfiguredWarnings(f: { notify_email: boolean; notify_discord: boolea
                             <CheckCircle v-if="rule.is_active" class="w-4 h-4" />
                             <XCircle v-else class="w-4 h-4" />
                         </button>
-                        <button @click="deleteRule(rule)" class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
+                        <button @click="deletingRule = rule" class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors">
                             <Trash2 class="w-4 h-4" />
                         </button>
                     </div>
@@ -461,5 +463,7 @@ function unconfiguredWarnings(f: { notify_email: boolean; notify_discord: boolea
                 </div>
             </div>
         </TransitionGroup>
+
+        <ConfirmModal :show="!!deletingRule" :title="`Delete &quot;${deletingRule?.name}&quot;?`" message="This alert rule and its tracking history will be permanently deleted." confirm-label="Delete" @confirm="deleteRule" @cancel="deletingRule = null" />
     </AppLayout>
 </template>

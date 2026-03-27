@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue';
 import { router, useForm } from '@inertiajs/vue3';
 import { Search, Pencil, Trash2, X, Package, Loader2, Plus, Check, ArrowUpDown, RefreshCw, LayoutGrid, User } from 'lucide-vue-next';
 import AppLayout from '@/layouts/AppLayout.vue';
+import ConfirmModal from '@/components/ConfirmModal.vue';
 import type { Category, TagFilter } from '@/types';
 import { twitchCategoryUrl } from '@/composables/useTwitch';
 
@@ -92,7 +93,8 @@ function addTag() { const v = tagInput.value.trim().toLowerCase(); if (v && !edi
 function removeTag(tag: string) { editForm.tags = editForm.tags.filter(t => t !== tag); }
 function startEdit(cat: Category) { editingId.value = cat.id; editForm.is_active = cat.is_active; editForm.notifications_enabled = cat.notifications_enabled; editForm.filter_source = cat.filter_source || (cat.use_global_filters ? 'global' : 'custom'); editForm.min_viewers = cat.min_viewers; editForm.min_avg_viewers = cat.min_avg_viewers; editForm.languages = cat.languages || []; editForm.keywords = cat.keywords || []; editForm.tags = cat.tags || []; tagInput.value = ''; }
 function saveEdit(cat: Category) { editForm.put(`/tracking/categories/${cat.id}`, { preserveScroll: true, onSuccess: () => { editingId.value = null; } }); }
-function deleteCategory(cat: Category) { router.delete(`/tracking/categories/${cat.id}`, { preserveScroll: true }); }
+const deletingCategory = ref<Category | null>(null);
+function deleteCategory() { if (!deletingCategory.value) return; router.delete(`/tracking/categories/${deletingCategory.value.id}`, { preserveScroll: true, onSuccess: () => { deletingCategory.value = null; } }); }
 
 const syncingCat = ref<number | null>(null);
 function syncCat(cat: Category) { syncingCat.value = cat.id; router.post(`/tracking/categories/${cat.id}/sync`, {}, { preserveScroll: true, onFinish: () => { syncingCat.value = null; } }); }
@@ -373,7 +375,7 @@ function deleteChannel(ch: TrackedChannel) { router.delete(`/tracking/channels/$
                                     <button @click="editingId === cat.id ? editingId = null : startEdit(cat)" class="p-2 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800">
                                         <Pencil class="w-4 h-4" />
                                     </button>
-                                    <button @click="deleteCategory(cat)" class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800">
+                                    <button @click="deletingCategory = cat" class="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800">
                                         <Trash2 class="w-4 h-4" />
                                     </button>
                                 </div>
@@ -493,5 +495,6 @@ function deleteChannel(ch: TrackedChannel) { router.delete(`/tracking/channels/$
                 </div>
             </TransitionGroup>
         </div>
+        <ConfirmModal :show="!!deletingCategory" :title="`Remove &quot;${deletingCategory?.name}&quot;?`" message="This category and all its streams will be removed." confirm-label="Remove" @confirm="deleteCategory" @cancel="deletingCategory = null" />
     </AppLayout>
 </template>
