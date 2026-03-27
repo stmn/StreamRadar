@@ -30,6 +30,10 @@ StreamRadar watches the categories and channels you pick, checks for new streams
 
 ---
 
+https://github.com/user-attachments/assets/fc9bbc7b-7b03-4267-8387-af9e16e64329
+
+---
+
 ## Installation
 
 ### Quick install (recommended)
