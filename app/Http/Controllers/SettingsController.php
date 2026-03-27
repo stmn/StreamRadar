@@ -405,8 +405,12 @@ class SettingsController extends Controller
     public function checkUpdate(): JsonResponse
     {
         try {
-            $localHash = trim(shell_exec('git -C '.base_path().' rev-parse HEAD 2>/dev/null') ?: '');
-            if (! $localHash) {
+            $versionFile = base_path('VERSION');
+            $localHash = file_exists($versionFile)
+                ? trim(file_get_contents($versionFile))
+                : trim(shell_exec('git -C '.base_path().' rev-parse HEAD 2>/dev/null') ?: '');
+
+            if (! $localHash || $localHash === 'unknown') {
                 return response()->json(['update_available' => false]);
             }
 

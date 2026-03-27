@@ -1,6 +1,8 @@
 node_modules
 vendor
 .git
+!.git/HEAD
+!.git/refs
 .env
 database/database.sqlite
 storage/logs/*
