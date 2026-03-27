@@ -5,14 +5,14 @@ import { Key, RefreshCw, Filter, Mail, Palette, Terminal, X, Plus, MessageCircle
 import AppLayout from '@/layouts/AppLayout.vue';
 import { useTheme } from '@/composables/useTheme';
 
-const props = defineProps<{ settings: Record<string, any> }>();
+const props = defineProps<{ settings: Record<string, any>; activeCategoriesCount: number }>();
 const { theme: currentTheme, setTheme } = useTheme();
 
 const form = useForm({
     twitch_client_id: props.settings.twitch_client_id || '',
     twitch_client_secret: props.settings.twitch_client_secret || '',
     auto_sync_enabled: props.settings.auto_sync_enabled !== '0' && props.settings.auto_sync_enabled !== false,
-    sync_frequency_minutes: props.settings.sync_frequency_minutes || '5',
+    sync_frequency_minutes: props.settings.sync_frequency_minutes || '1',
     global_min_viewers: props.settings.global_min_viewers || '0',
     global_min_avg_viewers: props.settings.global_min_avg_viewers || '0',
     global_languages: props.settings.global_languages || '[]',
@@ -146,6 +146,22 @@ function handleImport(e: Event) {
     router.post('/settings/import', formData as any, { preserveScroll: true, forceFormData: true });
 }
 
+// API usage estimation
+const TWITCH_RATE_LIMIT = 800; // requests per minute
+const estimatedRequests = computed(() => {
+    if (!form.auto_sync_enabled) return { perMin: 0, perHour: 0, perDay: 0, pct: 0 };
+    const freq = Math.max(1, parseInt(form.sync_frequency_minutes) || 5);
+    const cats = props.activeCategoriesCount || 0;
+    // Per sync: 1 req per category + 1 for tracked channels + 1 token (cached, ~1/hour)
+    const perSync = cats + 1;
+    const syncsPerHour = 60 / freq;
+    const perHour = Math.round(perSync * syncsPerHour + 1); // +1 token
+    const perMin = +(perSync / freq).toFixed(1);
+    const perDay = perHour * 24;
+    const pct = +((perMin / TWITCH_RATE_LIMIT) * 100).toFixed(1);
+    return { perMin, perHour, perDay, pct };
+});
+
 // Version check
 const updateAvailable = ref(false);
 const localVersion = ref('');
@@ -276,18 +292,52 @@ onMounted(() => {
 
                 <!-- Sync -->
                 <div id="section-sync" class="bg-white dark:bg-zinc-900 rounded-xl p-5 shadow-sm dark:shadow-none scroll-mt-24">
-                    <div class="flex items-center gap-2 mb-4">
-                        <RefreshCw class="w-5 h-5 text-purple-500" />
-                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Auto Synchronization</h3>
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2">
+                            <RefreshCw class="w-5 h-5 text-purple-500" />
+                            <h3 class="text-lg font-bold text-gray-900 dark:text-white">Auto Synchronization</h3>
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" v-model="form.auto_sync_enabled" class="rounded text-purple-600 focus:ring-purple-500 bg-white dark:bg-zinc-800" />
+                            <span class="text-xs font-medium text-gray-500 dark:text-zinc-400">Enabled</span>
+                        </label>
                     </div>
-                    <label class="flex items-center gap-2 mb-4">
-                        <input type="checkbox" v-model="form.auto_sync_enabled" class="rounded text-purple-600 focus:ring-purple-500 bg-white dark:bg-zinc-800" />
-                        <span class="text-sm text-gray-700 dark:text-zinc-300">Enable automatic sync</span>
-                    </label>
                     <div v-if="form.auto_sync_enabled">
-                        <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Sync Frequency (minutes)</label>
-                        <input v-model="form.sync_frequency_minutes" type="number" min="1" max="60"
-                            class="w-32 px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-xs font-medium text-gray-600 dark:text-zinc-400">Sync Frequency</label>
+                            <span class="text-sm font-semibold text-purple-600 dark:text-purple-400">{{ form.sync_frequency_minutes }} min</span>
+                        </div>
+                        <input v-model="form.sync_frequency_minutes" type="range" min="1" max="60" step="1"
+                            class="w-full h-2 rounded-full appearance-none cursor-pointer bg-gray-200 dark:bg-zinc-700 accent-purple-600
+                            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-purple-600 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:hover:bg-purple-500 [&::-webkit-slider-thumb]:transition-colors
+                            [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-purple-600 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-md" />
+                        <div class="flex justify-between mt-1 text-[10px] text-gray-400 dark:text-zinc-600">
+                            <span>1 min</span>
+                            <span>15</span>
+                            <span>30</span>
+                            <span>60 min</span>
+                        </div>
+
+                        <!-- API Usage Estimate -->
+                        <div v-if="estimatedRequests.perMin > 0" class="mt-4 p-3 rounded-lg bg-gray-50 dark:bg-zinc-800/50">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-medium text-gray-600 dark:text-zinc-400">Twitch API Usage</span>
+                                <span class="text-xs text-gray-500 dark:text-zinc-500">{{ estimatedRequests.pct }}% of limit</span>
+                            </div>
+                            <div class="w-full h-2 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                <div class="h-full rounded-full transition-all duration-300"
+                                    :class="estimatedRequests.pct < 25 ? 'bg-green-500' : estimatedRequests.pct < 50 ? 'bg-yellow-500' : estimatedRequests.pct < 75 ? 'bg-orange-500' : 'bg-red-500'"
+                                    :style="{ width: Math.min(estimatedRequests.pct, 100) + '%' }" />
+                            </div>
+                            <div class="flex justify-between mt-2 text-[10px] text-gray-400 dark:text-zinc-600">
+                                <span>~{{ estimatedRequests.perMin }}/min</span>
+                                <span>~{{ estimatedRequests.perHour }}/hour</span>
+                                <span>~{{ estimatedRequests.perDay.toLocaleString() }}/day</span>
+                            </div>
+                            <p class="text-[10px] text-gray-400 dark:text-zinc-600 mt-1">
+                                {{ props.activeCategoriesCount }} categories &middot; Twitch limit: 800 req/min
+                            </p>
+                        </div>
                     </div>
                 </div>
 

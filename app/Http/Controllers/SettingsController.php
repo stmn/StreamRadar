@@ -49,7 +49,7 @@ class SettingsController extends Controller
     public function index(): Response
     {
         $settings = Setting::getMany(self::SETTING_KEYS, [
-            'sync_frequency_minutes' => '5',
+            'sync_frequency_minutes' => '1',
             'global_min_viewers' => '0',
             'global_min_avg_viewers' => '0',
             'global_languages' => '[]',
@@ -69,6 +69,7 @@ class SettingsController extends Controller
 
         return Inertia::render('Settings', [
             'settings' => $settings,
+            'activeCategoriesCount' => Category::where('is_active', true)->count(),
         ]);
     }
 
