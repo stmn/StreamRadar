@@ -20,7 +20,9 @@ fi
 chown www-data:www-data /app/database/database.sqlite
 
 # Fix storage permissions
+mkdir -p /app/storage/logs /app/storage/framework/{sessions,views,cache}
 chown -R www-data:www-data /app/storage /app/bootstrap/cache
+chmod -R 775 /app/storage
 
 # Run migrations
 php /app/artisan migrate --force --no-interaction

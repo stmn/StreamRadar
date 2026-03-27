@@ -123,7 +123,8 @@ function formatDate(dateStr: string): string {
                 </div>
 
                 <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-900 dark:text-white">{{ item.value }}</p>
+                    <a v-if="item.type === 'channel'" :href="`https://www.twitch.tv/${item.value}`" target="_blank" class="text-sm font-medium text-gray-900 dark:text-white hover:text-purple-600 dark:hover:text-purple-400 transition-colors">{{ item.value }}</a>
+                    <p v-else class="text-sm font-medium text-gray-900 dark:text-white">{{ item.value }}</p>
                 </div>
                 <span class="text-xs text-gray-400 dark:text-zinc-600 shrink-0 hidden sm:block">{{ formatDate(item.created_at) }}</span>
                 <button @click="removeRule(item)" class="shrink-0 p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors">

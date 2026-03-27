@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import { Search, Clock, Radio, WifiOff, Bell, RefreshCw, Trash2, Eye } from 'lucide-vue-next';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { useNow } from '@/composables/useNow';
+import { twitchCategoryUrl } from '@/composables/useTwitch';
 import type { HistoryEvent, PaginatedData } from '@/types';
 
 const props = defineProps<{ events: PaginatedData<HistoryEvent>; filters: { type: string | null; search: string | null } }>();
@@ -41,6 +42,19 @@ function formatTime(dateStr: string): string {
     const diffH = Math.floor(diffMin / 60);
     if (diffH < 24) return `${diffH}h ago`;
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function timeKey(dateStr: string): string {
+    const d = new Date(dateStr);
+    d.setSeconds(0, 0);
+    return d.toISOString();
+}
+
+function shouldShowTime(idx: number): boolean {
+    const event = props.events.data[idx];
+    if (event.type === 'sync_completed') return false;
+    if (idx === 0) return true;
+    return timeKey(event.created_at) !== timeKey(props.events.data[idx - 1].created_at);
 }
 
 const typeConfig: Record<string, { label: string; icon: any; color: string }> = {
@@ -86,31 +100,51 @@ const types = Object.keys(typeConfig);
             <p class="mt-1 text-sm text-gray-500 dark:text-zinc-500">Events will appear here after syncing streams.</p>
         </div>
 
-        <div v-else class="bg-white dark:bg-zinc-900 rounded-xl shadow-sm dark:shadow-none overflow-hidden divide-y divide-gray-100/60 dark:divide-zinc-800/60">
-            <div v-for="event in events.data" :key="event.id" class="flex items-center gap-3 px-4 py-3">
-                <div :class="['w-8 h-8 rounded-lg flex items-center justify-center shrink-0', typeConfig[event.type]?.color || 'bg-gray-100 dark:bg-zinc-800 text-gray-500']">
-                    <component :is="typeConfig[event.type]?.icon || Clock" class="w-4 h-4" />
+        <div v-else class="space-y-0">
+            <template v-for="(event, idx) in events.data" :key="event.id">
+                <!-- Time separator -->
+                <div v-if="shouldShowTime(idx)" :class="['flex items-center gap-3 mb-1.5', idx > 0 ? 'mt-3' : '']">
+                    <div class="h-px flex-1 bg-gray-200 dark:bg-zinc-800"></div>
+                    <span class="text-[10px] font-medium text-gray-400 dark:text-zinc-600 shrink-0">{{ formatTime(event.created_at) }}</span>
+                    <div class="h-px flex-1 bg-gray-200 dark:bg-zinc-800"></div>
                 </div>
-                <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-2">
-                        <span v-if="event.streamer_name" class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ event.streamer_name }}</span>
-                        <span class="text-[10px] font-bold uppercase text-gray-400 dark:text-zinc-500">{{ typeConfig[event.type]?.label || event.type }}</span>
+
+                <!-- Event row -->
+                <div class="flex items-center gap-3 px-4 py-2.5 bg-white dark:bg-zinc-900 first:rounded-t-xl last:rounded-b-xl border-b border-gray-100/60 dark:border-zinc-800/60 last:border-b-0"
+                    :class="{ 'rounded-t-xl': shouldShowTime(idx), 'rounded-b-xl': idx === events.data.length - 1 || (idx < events.data.length - 1 && shouldShowTime(idx + 1)) }">
+                    <div :class="['w-7 h-7 rounded-lg flex items-center justify-center shrink-0', typeConfig[event.type]?.color || 'bg-gray-100 dark:bg-zinc-800 text-gray-500']">
+                        <component :is="typeConfig[event.type]?.icon || Clock" class="w-3.5 h-3.5" />
                     </div>
-                    <p v-if="event.title" class="text-xs text-gray-500 dark:text-zinc-500 truncate mt-0.5">
-                        {{ event.title }}
-                        <span v-if="event.category_name" class="text-purple-500 dark:text-purple-400"> — {{ event.category_name }}</span>
-                        <span v-if="event.metadata?.rule_names" class="text-amber-500 dark:text-amber-400"> ({{ event.metadata.rule_names.join(', ') }})</span>
-                        <span v-else-if="event.metadata?.rule_name" class="text-amber-500 dark:text-amber-400"> ({{ event.metadata.rule_name }})</span>
-                    </p>
-                </div>
-                <div class="text-right shrink-0">
-                    <div v-if="event.viewer_count" class="flex items-center gap-1 text-sm font-semibold text-gray-600 dark:text-zinc-300">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <a v-if="event.streamer_login" :href="`https://www.twitch.tv/${event.streamer_login}`" target="_blank" class="text-sm font-medium text-gray-900 dark:text-white truncate hover:text-purple-600 dark:hover:text-purple-400 transition-colors">{{ event.streamer_name || event.streamer_login }}</a>
+                            <span class="text-[10px] font-bold uppercase text-gray-400 dark:text-zinc-500">{{ typeConfig[event.type]?.label || event.type }}</span>
+                        </div>
+                        <p v-if="event.type === 'sync_completed' && event.metadata" class="text-xs text-gray-500 dark:text-zinc-500 mt-0.5">
+                            <span class="text-gray-400 dark:text-zinc-600 mr-1.5">{{ formatTime(event.created_at) }}</span>
+                            <span class="text-green-600 dark:text-green-400">{{ event.metadata.new }} new</span>
+                            <span class="mx-1">&middot;</span>
+                            <span>{{ event.metadata.updated }} updated</span>
+                            <span class="mx-1">&middot;</span>
+                            <span class="text-red-500 dark:text-red-400">{{ event.metadata.ended }} ended</span>
+                            <span v-if="event.metadata.alerts" class="mx-1">&middot;</span>
+                            <span v-if="event.metadata.alerts" class="text-amber-500 dark:text-amber-400">{{ event.metadata.alerts }} alerts</span>
+                            <span class="mx-1">&middot;</span>
+                            <span class="text-gray-400 dark:text-zinc-600">{{ event.metadata.duration }}s</span>
+                        </p>
+                        <p v-else-if="event.title" class="text-xs text-gray-500 dark:text-zinc-500 truncate mt-0.5">
+                            {{ event.title }}
+                             <span v-if="event.category_name" class="text-gray-400 dark:text-zinc-600">—</span> <a v-if="event.category_name" :href="twitchCategoryUrl(event.category_name)" target="_blank" class="text-purple-500 dark:text-purple-400 hover:underline">{{ event.category_name }}</a>
+                            <span v-if="event.metadata?.rule_names" class="text-amber-500 dark:text-amber-400"> ({{ event.metadata.rule_names.join(', ') }})</span>
+                            <span v-else-if="event.metadata?.rule_name" class="text-amber-500 dark:text-amber-400"> ({{ event.metadata.rule_name }})</span>
+                        </p>
+                    </div>
+                    <div v-if="event.viewer_count" class="flex items-center gap-1 text-sm font-semibold text-gray-600 dark:text-zinc-300 shrink-0">
                         <Eye class="w-3.5 h-3.5" />
                         {{ event.viewer_count.toLocaleString() }}
                     </div>
-                    <p class="text-xs text-gray-400 dark:text-zinc-600">{{ formatTime(event.created_at) }}</p>
                 </div>
-            </div>
+            </template>
         </div>
 
         <div v-if="events.last_page > 1" class="flex justify-center gap-1 mt-6">

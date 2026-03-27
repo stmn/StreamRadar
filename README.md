@@ -62,7 +62,7 @@ docker compose up -d
 
 Everything is automatic — database, encryption keys, and migrations are set up on first launch.
 
-**Change the port** (e.g. to 3000): `APP_PORT=3000 docker compose up -d`
+**Change the port** (e.g. to 3000): add `APP_PORT=3000` to `.env` file, then run `docker compose up -d`
 
 **Stop:** `docker compose stop`
 
