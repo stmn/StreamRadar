@@ -28,6 +28,7 @@ class Stream extends Model
         'tags',
         'is_mature',
         'synced_at',
+        'missing_since',
     ];
 
     protected function casts(): array
@@ -37,6 +38,7 @@ class Stream extends Model
             'avg_viewers' => 'integer',
             'started_at' => 'datetime',
             'synced_at' => 'datetime',
+            'missing_since' => 'datetime',
             'tags' => 'array',
             'is_mature' => 'boolean',
         ];

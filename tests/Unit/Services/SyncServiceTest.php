@@ -194,7 +194,7 @@ test('syncCategory handles Twitch API exception gracefully', function () {
 
 // sync()
 
-test('sync removes streams no longer live and logs offline events', function () {
+test('sync marks missing streams with missing_since on first absence', function () {
     $twitch = $this->mock(TwitchApiService::class);
     $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
@@ -203,6 +203,28 @@ test('sync removes streams no longer live and logs offline events', function () 
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([
         makeTwitchStream(['id' => 'new_stream']),
     ]);
+    $twitch->shouldReceive('getStreamsByUsers')->andReturn([]);
+    $twitch->shouldReceive('getUsersByIds')->andReturn([]);
+
+    $sync = app(SyncService::class);
+    $result = $sync->sync();
+
+    // Grace period: stream still in DB but marked missing
+    expect($result->endedStreams)->toBe(0);
+    $this->assertDatabaseHas('streams', ['twitch_id' => 'old_stream']);
+    expect(Stream::where('twitch_id', 'old_stream')->first()->missing_since)->not->toBeNull();
+});
+
+test('sync removes streams after grace period expires', function () {
+    $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
+    $category = Category::factory()->create();
+    Stream::factory()->forCategory($category)->create([
+        'twitch_id' => 'old_stream',
+        'missing_since' => now()->subMinutes(20),
+    ]);
+
+    $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([]);
     $twitch->shouldReceive('getStreamsByUsers')->andReturn([]);
     $twitch->shouldReceive('getUsersByIds')->andReturn([]);
 

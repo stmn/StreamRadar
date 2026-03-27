@@ -54,16 +54,31 @@ class SyncService
         array_push($allApiIds, ...$channelResult['all_api_ids']);
         array_push($allTriggered, ...$channelResult['triggered_alerts']);
 
-        // Remove streams no longer in our filtered set
-        $endedQuery = Stream::with('category');
-        if (! empty($allFetchedStreamIds)) {
-            $endedQuery->whereNotIn('twitch_id', $allFetchedStreamIds);
-        }
-        $endedStreams = $endedQuery->get();
+        // Grace period: don't remove streams immediately — mark as missing first
+        // Streams missing for 3+ sync cycles are considered truly offline
+        $gracePeriodMinutes = max(3 * (int) Setting::get('sync_frequency_minutes', 5), 3);
 
-        // Only log offline for streams actually offline (not returned by API at all)
-        // Streams that are still live but filtered out (e.g. below min_viewers) are removed silently
-        foreach ($endedStreams as $stream) {
+        $missingQuery = Stream::query();
+        if (! empty($allFetchedStreamIds)) {
+            $missingQuery->whereNotIn('twitch_id', $allFetchedStreamIds);
+        }
+        $missingStreams = $missingQuery->get();
+
+        $endedCount = 0;
+
+        foreach ($missingStreams as $stream) {
+            if (! $stream->missing_since) {
+                // First time missing — start grace period
+                $stream->update(['missing_since' => now()]);
+                continue;
+            }
+
+            if ($stream->missing_since->diffInMinutes(now()) < $gracePeriodMinutes) {
+                // Still within grace period — keep
+                continue;
+            }
+
+            // Grace period expired — actually remove
             if (! in_array($stream->twitch_id, $allApiIds)) {
                 HistoryEvent::create([
                     'type' => 'stream_offline',
@@ -76,9 +91,10 @@ class SyncService
                     'profile_image_url' => $stream->profile_image_url,
                 ]);
             }
+
+            $stream->delete();
+            $endedCount++;
         }
-        $endedCount = $endedStreams->count();
-        Stream::whereIn('id', $endedStreams->pluck('id'))->delete();
 
         $this->fetchMissingAvatars();
 
@@ -175,6 +191,7 @@ class SyncService
                     'tags' => $twitchStream['tags'] ?? null,
                     'is_mature' => $twitchStream['is_mature'] ?? false,
                     'synced_at' => now(),
+                    'missing_since' => null,
                 ],
             );
 
@@ -271,6 +288,7 @@ class SyncService
                     'tags' => $twitchStream['tags'] ?? null,
                     'is_mature' => $twitchStream['is_mature'] ?? false,
                     'synced_at' => now(),
+                    'missing_since' => null,
                 ],
             );
 

@@ -499,35 +499,53 @@ test('E2E: tracked channel appears regardless of category filters', function () 
 // STREAM OFFLINE — only for actually offline streams
 // ═══════════════════════════════════════════════════════════════════
 
-test('E2E: stream filtered out by min_viewers does NOT get offline event', function () {
+test('E2E: missing stream gets grace period before removal', function () {
     $twitch = $this->mock(TwitchApiService::class);
     $this->mock(TwitchTrackerService::class);
 
-    Setting::set('global_min_viewers', '100');
-
-    $category = Category::factory()->create(['use_global_filters' => true, 'filter_source' => 'global']);
+    $category = Category::factory()->create();
     Stream::factory()->forCategory($category)->create([
         'twitch_id' => '888',
-        'user_login' => 'fluctuating',
-        'viewer_count' => 50,
+        'user_login' => 'flickering',
     ]);
 
-    // Stream still live on Twitch but below filter
+    $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([]);
+    $twitch->shouldReceive('getStreamsByUsers')->andReturn([]);
+    $twitch->shouldReceive('getUsersByIds')->andReturn([]);
+
+    app(SyncService::class)->sync();
+
+    // First sync: stream marked as missing, NOT deleted
+    $this->assertDatabaseHas('streams', ['twitch_id' => '888']);
+    expect(Stream::where('twitch_id', '888')->first()->missing_since)->not->toBeNull();
+    $this->assertDatabaseMissing('history_events', ['type' => 'stream_offline']);
+});
+
+test('E2E: stream returns during grace period — missing_since reset', function () {
+    $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
+
+    $category = Category::factory()->create();
+    Stream::factory()->forCategory($category)->create([
+        'twitch_id' => '888',
+        'user_login' => 'flickering',
+        'missing_since' => now()->subMinute(),
+    ]);
+
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([
-        twitchStream(['id' => '888', 'user_login' => 'fluctuating', 'viewer_count' => 50]),
+        twitchStream(['id' => '888', 'user_login' => 'flickering']),
     ]);
     $twitch->shouldReceive('getStreamsByUsers')->andReturn([]);
     $twitch->shouldReceive('getUsersByIds')->andReturn([]);
 
     app(SyncService::class)->sync();
 
-    // Stream removed from DB
-    $this->assertDatabaseMissing('streams', ['twitch_id' => '888']);
-    // But NO offline event (stream is still live, just filtered)
-    $this->assertDatabaseMissing('history_events', ['type' => 'stream_offline', 'stream_twitch_id' => '888']);
+    // Stream is back — missing_since cleared
+    expect(Stream::where('twitch_id', '888')->first()->missing_since)->toBeNull();
+    $this->assertDatabaseMissing('history_events', ['type' => 'stream_offline']);
 });
 
-test('E2E: actually offline stream gets offline event', function () {
+test('E2E: stream removed after grace period expires', function () {
     $twitch = $this->mock(TwitchApiService::class);
     $this->mock(TwitchTrackerService::class);
 
@@ -535,9 +553,9 @@ test('E2E: actually offline stream gets offline event', function () {
     Stream::factory()->forCategory($category)->create([
         'twitch_id' => '777',
         'user_login' => 'went_offline',
+        'missing_since' => now()->subMinutes(20),  // well past grace period
     ]);
 
-    // Stream NOT returned by API — actually offline
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([]);
     $twitch->shouldReceive('getStreamsByUsers')->andReturn([]);
     $twitch->shouldReceive('getUsersByIds')->andReturn([]);
@@ -546,6 +564,34 @@ test('E2E: actually offline stream gets offline event', function () {
 
     $this->assertDatabaseMissing('streams', ['twitch_id' => '777']);
     $this->assertDatabaseHas('history_events', ['type' => 'stream_offline', 'stream_twitch_id' => '777']);
+});
+
+test('E2E: filtered stream removed silently without offline event after grace', function () {
+    $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
+
+    Setting::set('global_min_viewers', '100');
+
+    $category = Category::factory()->create(['use_global_filters' => true, 'filter_source' => 'global']);
+    Stream::factory()->forCategory($category)->create([
+        'twitch_id' => '888',
+        'user_login' => 'below_threshold',
+        'viewer_count' => 50,
+        'missing_since' => now()->subMinutes(20),
+    ]);
+
+    // Stream still live on Twitch (in allApiIds) but below filter
+    $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([
+        twitchStream(['id' => '888', 'user_login' => 'below_threshold', 'viewer_count' => 50]),
+    ]);
+    $twitch->shouldReceive('getStreamsByUsers')->andReturn([]);
+    $twitch->shouldReceive('getUsersByIds')->andReturn([]);
+
+    app(SyncService::class)->sync();
+
+    // Removed but NO offline event (still live, just filtered)
+    $this->assertDatabaseMissing('streams', ['twitch_id' => '888']);
+    $this->assertDatabaseMissing('history_events', ['type' => 'stream_offline', 'stream_twitch_id' => '888']);
 });
 
 // ═══════════════════════════════════════════════════════════════════
