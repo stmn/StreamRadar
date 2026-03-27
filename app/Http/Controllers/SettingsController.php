@@ -405,31 +405,56 @@ class SettingsController extends Controller
     public function checkUpdate(): JsonResponse
     {
         try {
+            // Build-time version from VERSION file
             $versionFile = base_path('VERSION');
-            $localHash = file_exists($versionFile)
+            $buildHash = file_exists($versionFile)
                 ? trim(file_get_contents($versionFile))
                 : trim(shell_exec('git -C '.base_path().' rev-parse HEAD 2>/dev/null') ?: '');
 
-            if (! $localHash || $localHash === 'unknown') {
+            if (! $buildHash || $buildHash === 'unknown') {
                 return response()->json(['update_available' => false]);
             }
 
-            $response = Http::timeout(5)->get('https://api.github.com/repos/stmn/StreamRadar/commits/main');
-            if (! $response->successful()) {
+            // Current HEAD from mounted .git (after git pull on host)
+            $latestHash = $this->resolveGitHead();
+
+            if (! $latestHash) {
                 return response()->json(['update_available' => false]);
             }
 
-            $remoteHash = $response->json('sha');
-            $updateAvailable = $remoteHash && $localHash !== $remoteHash;
+            $updateAvailable = $buildHash !== $latestHash;
 
             return response()->json([
                 'update_available' => $updateAvailable,
-                'local_version' => substr($localHash, 0, 7),
-                'remote_version' => $remoteHash ? substr($remoteHash, 0, 7) : null,
+                'local_version' => substr($buildHash, 0, 7),
+                'remote_version' => $updateAvailable ? substr($latestHash, 0, 7) : null,
             ]);
         } catch (\Exception) {
             return response()->json(['update_available' => false]);
         }
+    }
+
+    private function resolveGitHead(): ?string
+    {
+        // Docker: mounted .git-head and .git-refs from host
+        $headFile = base_path('.git-head');
+        $refsDir = base_path('.git-refs');
+
+        if (file_exists($headFile)) {
+            $ref = trim(file_get_contents($headFile));
+            if (str_starts_with($ref, 'ref: ')) {
+                $refPath = $refsDir.'/'.str_replace('refs/', '', substr($ref, 5));
+
+                return file_exists($refPath) ? trim(file_get_contents($refPath)) : null;
+            }
+
+            return $ref;
+        }
+
+        // Dev: direct git
+        $hash = trim(shell_exec('git -C '.base_path().' rev-parse HEAD 2>/dev/null') ?: '');
+
+        return $hash ?: null;
     }
 
     private function updateMailConfig(): void

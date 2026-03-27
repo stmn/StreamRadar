@@ -5,6 +5,8 @@ services:
       - "${APP_PORT:-8080}:80"
     volumes:
       - ./database:/app/database
+      - ./.git/refs:/app/.git-refs:ro
+      - ./.git/HEAD:/app/.git-head:ro
     environment:
       - APP_ENV=production
       - APP_DEBUG=false
