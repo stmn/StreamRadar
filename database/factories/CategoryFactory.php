@@ -21,6 +21,7 @@ class CategoryFactory extends Factory
             'min_viewers' => null,
             'languages' => null,
             'keywords' => null,
+            'tags' => null,
         ];
     }
 

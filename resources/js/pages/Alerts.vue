@@ -11,11 +11,14 @@ const props = defineProps<{ alertRules: AlertRule[]; categories: Category[]; ema
 const showForm = ref(false);
 const showFilters = ref(false);
 const channelMode = ref<'anyone' | 'specific'>('anyone');
+const categoryMode = ref<'any' | 'specific' | 'tagged'>('any');
 const form = useForm({
     name: '',
     streamer_login: '',
     category_id: null as number | null,
+    category_tags: [] as string[],
     min_viewers: null as number | null,
+    min_avg_viewers: null as number | null,
     language: '',
     keywords: [] as string[],
     notify_email: true,
@@ -26,6 +29,12 @@ const form = useForm({
     notify_on_stream_start: true,
 });
 
+const availableTags = computed(() => {
+    const tags = new Set<string>();
+    props.categories.forEach(c => c.tags?.forEach(t => tags.add(t)));
+    return Array.from(tags).sort();
+});
+
 const kwInput = ref('');
 function addKw() { const v = kwInput.value.trim(); if (v && !form.keywords.includes(v)) form.keywords.push(v); kwInput.value = ''; }
 function removeKw(kw: string) { form.keywords = form.keywords.filter(k => k !== kw); }
@@ -33,12 +42,15 @@ function removeKw(kw: string) { form.keywords = form.keywords.filter(k => k !== 
 // Auto-generate name
 const autoName = computed(() => {
     const who = channelMode.value === 'specific' && form.streamer_login ? form.streamer_login : 'Anyone';
-    const cat = form.category_id ? props.categories.find(c => c.id === form.category_id)?.name : 'any category';
+    let cat = 'any category';
+    if (categoryMode.value === 'specific' && form.category_id) cat = props.categories.find(c => c.id === form.category_id)?.name ?? 'category';
+    else if (categoryMode.value === 'tagged' && form.category_tags.length) cat = form.category_tags.join(', ');
     return `${who} — ${cat}`;
 });
 function resetForm() {
     form.reset();
     channelMode.value = 'anyone';
+    categoryMode.value = 'any';
     showFilters.value = false;
     kwInput.value = '';
 }
@@ -46,6 +58,8 @@ function resetForm() {
 function submit() {
     if (!form.name) form.name = autoName.value;
     if (channelMode.value === 'anyone') form.streamer_login = '';
+    if (categoryMode.value !== 'specific') form.category_id = null;
+    if (categoryMode.value !== 'tagged') form.category_tags = [];
     form.post('/alerts', { preserveScroll: true, onSuccess: () => { resetForm(); showForm.value = false; } });
 }
 
@@ -54,10 +68,11 @@ const hasFilters = computed(() => !!(form.min_viewers || form.language || form.k
 // ── Edit ────────────────────────────────────────────────────────────
 const editingId = ref<number | null>(null);
 const editChannelMode = ref<'anyone' | 'specific'>('anyone');
+const editCategoryMode = ref<'any' | 'specific' | 'tagged'>('any');
 const editShowFilters = ref(false);
 const editForm = useForm({
-    name: '', streamer_login: '', category_id: null as number | null,
-    min_viewers: null as number | null, language: '', keywords: [] as string[],
+    name: '', streamer_login: '', category_id: null as number | null, category_tags: [] as string[],
+    min_viewers: null as number | null, min_avg_viewers: null as number | null, language: '', keywords: [] as string[],
     notify_email: true, notify_discord: true, notify_telegram: true, notify_webhook: false,
     notify_on_category_change: false,
     notify_on_stream_start: true,
@@ -72,6 +87,7 @@ function startEdit(rule: AlertRule) {
     editForm.streamer_login = rule.streamer_login || '';
     editForm.category_id = rule.category_id;
     editForm.min_viewers = rule.min_viewers;
+    editForm.min_avg_viewers = rule.min_avg_viewers;
     editForm.language = rule.language || '';
     editForm.keywords = rule.keywords ? [...rule.keywords] : [];
     editForm.notify_email = rule.notify_email;
@@ -80,13 +96,17 @@ function startEdit(rule: AlertRule) {
     editForm.notify_webhook = rule.notify_webhook;
     editForm.notify_on_category_change = rule.notify_on_category_change;
     editForm.notify_on_stream_start = rule.notify_on_stream_start;
+    editForm.category_tags = rule.category_tags || [];
     editChannelMode.value = rule.streamer_login ? 'specific' : 'anyone';
-    editShowFilters.value = !!(rule.min_viewers || rule.language || rule.keywords?.length);
+    editCategoryMode.value = rule.category_tags?.length ? 'tagged' : rule.category_id ? 'specific' : 'any';
+    editShowFilters.value = !!(rule.min_viewers || rule.min_avg_viewers || rule.language || rule.keywords?.length);
     editKwInput.value = '';
 }
 
 function saveEdit(rule: AlertRule) {
     if (editChannelMode.value === 'anyone') editForm.streamer_login = '';
+    if (editCategoryMode.value !== 'specific') editForm.category_id = null;
+    if (editCategoryMode.value !== 'tagged') editForm.category_tags = [];
     editForm.put(`/alerts/${rule.id}`, { preserveScroll: true, onSuccess: () => { editingId.value = null; } });
 }
 
@@ -185,10 +205,23 @@ function unconfiguredWarnings(f: { notify_email: boolean; notify_discord: boolea
                     <!-- Row 4: in category -->
                     <div class="flex flex-wrap items-center gap-2">
                         <span class="text-sm font-semibold text-gray-900 dark:text-white">in</span>
-                        <select v-model="form.category_id" class="px-3 py-1.5 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none focus:ring-2 focus:ring-purple-500 font-medium">
-                            <option :value="null">any tracked category</option>
+                        <select v-model="categoryMode" class="px-3 py-1.5 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none focus:ring-2 focus:ring-purple-500 font-medium">
+                            <option value="any">any tracked category</option>
+                            <option value="specific">specific category</option>
+                            <option v-if="availableTags.length" value="tagged">tagged categories</option>
+                        </select>
+                        <select v-if="categoryMode === 'specific'" v-model="form.category_id" class="px-3 py-1.5 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none focus:ring-2 focus:ring-purple-500 font-medium">
+                            <option :value="null" disabled>Select category</option>
                             <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                         </select>
+                        <div v-if="categoryMode === 'tagged'" class="flex flex-wrap gap-1">
+                            <label v-for="tag in availableTags" :key="tag"
+                                :class="['inline-flex px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer transition-all border',
+                                    form.category_tags.includes(tag) ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/30' : 'bg-gray-50 dark:bg-zinc-800 text-gray-400 dark:text-zinc-600 border-transparent']">
+                                <input type="checkbox" :value="tag" v-model="form.category_tags" class="sr-only" />
+                                {{ tag }}
+                            </label>
+                        </div>
                     </div>
 
                     <!-- Filters toggle -->
@@ -205,6 +238,9 @@ function unconfiguredWarnings(f: { notify_email: boolean; notify_discord: boolea
                             <input v-model.number="form.min_viewers" type="number" min="0" placeholder="0"
                                 class="w-20 px-3 py-1.5 text-sm text-center rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none" />
                             <span class="text-sm text-gray-600 dark:text-zinc-400">viewers</span>
+                            <span class="text-sm text-gray-600 dark:text-zinc-400">and avg</span>
+                            <input v-model.number="form.min_avg_viewers" type="number" min="0" placeholder="0"
+                                class="w-20 px-3 py-1.5 text-sm text-center rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none" />
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="text-sm text-gray-600 dark:text-zinc-400">streaming in</span>
@@ -272,7 +308,8 @@ function unconfiguredWarnings(f: { notify_email: boolean; notify_discord: boolea
                             <span v-if="rule.streamer_login" class="px-2 py-0.5 bg-purple-50 dark:bg-purple-500/10 text-purple-600 dark:text-purple-400 rounded-full font-medium">@{{ rule.streamer_login }}</span>
                             <span v-else class="px-2 py-0.5 bg-gray-50 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 rounded-full">Anyone</span>
                             <span class="text-gray-300 dark:text-zinc-700">&middot;</span>
-                            <span>{{ rule.category?.name || 'Any category' }}</span>
+                            <span v-if="rule.category_tags?.length" class="text-purple-600 dark:text-purple-400">{{ rule.category_tags.join(', ') }}</span>
+                            <span v-else>{{ rule.category?.name || 'Any category' }}</span>
                             <template v-if="rule.notify_on_category_change">
                                 <span class="text-gray-300 dark:text-zinc-700">&middot;</span>
                                 <span class="text-amber-600 dark:text-amber-400">game changes</span>
@@ -347,10 +384,23 @@ function unconfiguredWarnings(f: { notify_email: boolean; notify_discord: boolea
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <span class="text-sm font-semibold text-gray-900 dark:text-white">in</span>
-                        <select v-model="editForm.category_id" class="px-3 py-1.5 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none focus:ring-2 focus:ring-purple-500 font-medium">
-                            <option :value="null">any tracked category</option>
+                        <select v-model="editCategoryMode" class="px-3 py-1.5 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none focus:ring-2 focus:ring-purple-500 font-medium">
+                            <option value="any">any tracked category</option>
+                            <option value="specific">specific category</option>
+                            <option v-if="availableTags.length" value="tagged">tagged categories</option>
+                        </select>
+                        <select v-if="editCategoryMode === 'specific'" v-model="editForm.category_id" class="px-3 py-1.5 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none focus:ring-2 focus:ring-purple-500 font-medium">
+                            <option :value="null" disabled>Select category</option>
                             <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                         </select>
+                        <div v-if="editCategoryMode === 'tagged'" class="flex flex-wrap gap-1">
+                            <label v-for="tag in availableTags" :key="tag"
+                                :class="['inline-flex px-2.5 py-1 rounded-full text-xs font-medium cursor-pointer transition-all border',
+                                    editForm.category_tags.includes(tag) ? 'bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/30' : 'bg-gray-50 dark:bg-zinc-800 text-gray-400 dark:text-zinc-600 border-transparent']">
+                                <input type="checkbox" :value="tag" v-model="editForm.category_tags" class="sr-only" />
+                                {{ tag }}
+                            </label>
+                        </div>
                     </div>
 
                     <button @click="editShowFilters = !editShowFilters" class="flex items-center gap-1.5 text-xs font-medium text-gray-400 dark:text-zinc-500 hover:text-gray-600 dark:hover:text-zinc-300 transition-colors">
@@ -364,6 +414,9 @@ function unconfiguredWarnings(f: { notify_email: boolean; notify_discord: boolea
                             <input v-model.number="editForm.min_viewers" type="number" min="0" placeholder="0"
                                 class="w-20 px-3 py-1.5 text-sm text-center rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none" />
                             <span class="text-sm text-gray-600 dark:text-zinc-400">viewers</span>
+                            <span class="text-sm text-gray-600 dark:text-zinc-400">and avg</span>
+                            <input v-model.number="editForm.min_avg_viewers" type="number" min="0" placeholder="0"
+                                class="w-20 px-3 py-1.5 text-sm text-center rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-white border border-gray-200 dark:border-zinc-700 outline-none" />
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
                             <span class="text-sm text-gray-600 dark:text-zinc-400">streaming in</span>

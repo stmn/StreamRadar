@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use App\Models\Setting;
+use App\Models\Stream;
+use App\Models\TagFilter;
 use App\Models\TrackedChannel;
 use App\Services\SyncService;
 use App\Services\TwitchApiService;
@@ -32,6 +35,13 @@ class TrackingController extends Controller
             'channels' => $channels,
             'sort' => $sort,
             'tab' => $request->input('tab', 'categories'),
+            'tagFilters' => TagFilter::orderBy('tag')->get(),
+            'globalFilters' => [
+                'min_viewers' => (int) Setting::get('global_min_viewers', 0),
+                'min_avg_viewers' => (int) Setting::get('global_min_avg_viewers', 0),
+                'languages' => json_decode(Setting::get('global_languages', '[]'), true) ?: [],
+                'keywords' => json_decode(Setting::get('global_keywords', '[]'), true) ?: [],
+            ],
         ]);
     }
 
@@ -46,12 +56,31 @@ class TrackingController extends Controller
         try {
             $results = $twitch->searchCategories($request->input('query'));
             $trackedIds = Category::pluck('twitch_id')->toArray();
+            $queryLower = strtolower($request->input('query'));
 
             $results = array_map(function ($cat) use ($trackedIds) {
                 $cat['is_tracked'] = in_array($cat['id'], $trackedIds);
 
                 return $cat;
             }, $results);
+
+            // Sort: exact match first, then prefix matches, then rest
+            usort($results, function ($a, $b) use ($queryLower) {
+                $aName = strtolower($a['name']);
+                $bName = strtolower($b['name']);
+                $aExact = $aName === $queryLower;
+                $bExact = $bName === $queryLower;
+                if ($aExact !== $bExact) {
+                    return $bExact <=> $aExact;
+                }
+                $aPrefix = str_starts_with($aName, $queryLower);
+                $bPrefix = str_starts_with($bName, $queryLower);
+                if ($aPrefix !== $bPrefix) {
+                    return $bPrefix <=> $aPrefix;
+                }
+
+                return strlen($aName) <=> strlen($bName);
+            });
 
             return response()->json($results);
         } catch (\Exception $e) {
@@ -92,13 +121,67 @@ class TrackingController extends Controller
             'notifications_enabled' => 'sometimes|boolean',
             'use_global_filters' => 'sometimes|boolean',
             'min_viewers' => 'nullable|integer|min:0',
+            'min_avg_viewers' => 'nullable|integer|min:0',
             'languages' => 'nullable|array',
             'keywords' => 'nullable|array',
+            'tags' => 'nullable|array',
+            'filter_source' => 'sometimes|string|max:100',
         ]);
+
+        // Keep use_global_filters in sync for backwards compat
+        if (isset($validated['filter_source'])) {
+            $validated['use_global_filters'] = $validated['filter_source'] === 'global';
+        }
 
         $category->update($validated);
 
         return back()->with('success', "Category \"{$category->name}\" updated.");
+    }
+
+    // ── Tag Filters ──────────────────────────────────────────────────
+
+    public function storeTagFilter(Request $request): \Illuminate\Http\RedirectResponse
+    {
+        $validated = $request->validate([
+            'tag' => 'required|string|max:100|unique:tag_filters,tag',
+            'min_viewers' => 'nullable|integer|min:0',
+            'min_avg_viewers' => 'nullable|integer|min:0',
+            'languages' => 'nullable|array',
+            'keywords' => 'nullable|array',
+        ]);
+
+        TagFilter::create($validated);
+
+        return back()->with('success', "Tag filter \"{$validated['tag']}\" created.");
+    }
+
+    public function updateTagFilter(Request $request, TagFilter $tagFilter): \Illuminate\Http\RedirectResponse
+    {
+        $validated = $request->validate([
+            'min_viewers' => 'nullable|integer|min:0',
+            'min_avg_viewers' => 'nullable|integer|min:0',
+            'languages' => 'nullable|array',
+            'keywords' => 'nullable|array',
+        ]);
+
+        $tagFilter->update($validated);
+
+        return back()->with('success', "Tag filter \"{$tagFilter->tag}\" updated.");
+    }
+
+    public function destroyTagFilter(TagFilter $tagFilter): \Illuminate\Http\RedirectResponse
+    {
+        $tag = $tagFilter->tag;
+
+        // Reset categories using this tag filter back to global
+        Category::where('filter_source', "tag:{$tag}")->update([
+            'filter_source' => 'global',
+            'use_global_filters' => true,
+        ]);
+
+        $tagFilter->delete();
+
+        return back()->with('success', "Tag filter \"{$tag}\" removed.");
     }
 
     public function destroyCategory(Category $category): \Illuminate\Http\RedirectResponse
@@ -117,6 +200,14 @@ class TrackingController extends Controller
         }
 
         $result = $sync->syncCategory($category);
+
+        // Remove streams from this category that didn't pass filters
+        $staleQuery = Stream::where('category_id', $category->id);
+        if (! empty($result['stream_ids'])) {
+            $staleQuery->whereNotIn('twitch_id', $result['stream_ids']);
+        }
+        $staleQuery->delete();
+
         $sync->getAlertService()->sendNotifications($result['triggered_alerts']);
 
         return back()->with('success', "\"{$category->name}\" synced — {$result['new']} new, {$result['updated']} updated.");

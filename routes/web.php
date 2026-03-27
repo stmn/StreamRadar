@@ -25,6 +25,9 @@ Route::post('/tracking/categories', [TrackingController::class, 'storeCategory']
 Route::put('/tracking/categories/{category}', [TrackingController::class, 'updateCategory'])->name('tracking.update-category');
 Route::delete('/tracking/categories/{category}', [TrackingController::class, 'destroyCategory'])->name('tracking.destroy-category');
 Route::post('/tracking/categories/{category}/sync', [TrackingController::class, 'syncCategory'])->name('tracking.sync-category');
+Route::post('/tracking/tag-filters', [TrackingController::class, 'storeTagFilter'])->name('tracking.store-tag-filter');
+Route::put('/tracking/tag-filters/{tagFilter}', [TrackingController::class, 'updateTagFilter'])->name('tracking.update-tag-filter');
+Route::delete('/tracking/tag-filters/{tagFilter}', [TrackingController::class, 'destroyTagFilter'])->name('tracking.destroy-tag-filter');
 Route::post('/tracking/channels', [TrackingController::class, 'storeChannel'])->name('tracking.store-channel');
 Route::delete('/tracking/channels/{channel}', [TrackingController::class, 'destroyChannel'])->name('tracking.destroy-channel');
 Route::delete('/tracking/channels/by-login/{login}', [TrackingController::class, 'destroyChannelByLogin'])->name('tracking.destroy-channel-by-login');

@@ -14,8 +14,10 @@ class AlertRule extends Model
         'name',
         'streamer_login',
         'category_id',
+        'category_tags',
         'match_mode',
         'min_viewers',
+        'min_avg_viewers',
         'language',
         'keywords',
         'notify_email',
@@ -31,7 +33,9 @@ class AlertRule extends Model
     {
         return [
             'min_viewers' => 'integer',
+            'min_avg_viewers' => 'integer',
             'keywords' => 'array',
+            'category_tags' => 'array',
             'notify_email' => 'boolean',
             'notify_discord' => 'boolean',
             'notify_telegram' => 'boolean',
@@ -72,8 +76,26 @@ class AlertRule extends Model
             return false;
         }
 
+        if (! empty($this->category_tags)) {
+            $categoryTags = $stream->category?->tags ?? [];
+            $matched = ! empty(array_intersect(
+                array_map('strtolower', $this->category_tags),
+                array_map('strtolower', $categoryTags),
+            ));
+            if (! $matched) {
+                return false;
+            }
+        }
+
         if ($this->min_viewers && $stream->viewer_count < $this->min_viewers) {
             return false;
+        }
+
+        if ($this->min_avg_viewers) {
+            $avg = $stream->avg_viewers ?? $stream->viewer_count;
+            if ($avg < $this->min_avg_viewers) {
+                return false;
+            }
         }
 
         if ($this->language && strtolower($this->language) !== strtolower($stream->language ?? '')) {

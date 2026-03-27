@@ -20,7 +20,7 @@ class AlertController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
-        $categories = Category::orderBy('name')->get(['id', 'name']);
+        $categories = Category::orderBy('name')->get(['id', 'name', 'tags']);
 
         return Inertia::render('Alerts', [
             'alertRules' => $alertRules,
@@ -38,7 +38,9 @@ class AlertController extends Controller
             'name' => 'required|string|max:255',
             'streamer_login' => 'nullable|string|max:255',
             'category_id' => 'nullable|exists:categories,id',
+            'category_tags' => 'nullable|array',
             'min_viewers' => 'nullable|integer|min:0',
+            'min_avg_viewers' => 'nullable|integer|min:0',
             'language' => 'nullable|string|max:10',
             'keywords' => 'nullable|array',
             'notify_email' => 'boolean',
@@ -71,7 +73,9 @@ class AlertController extends Controller
             'is_active' => 'sometimes|boolean',
             'streamer_login' => 'nullable|string|max:255',
             'category_id' => 'nullable|exists:categories,id',
+            'category_tags' => 'nullable|array',
             'min_viewers' => 'nullable|integer|min:0',
+            'min_avg_viewers' => 'nullable|integer|min:0',
             'language' => 'nullable|string|max:10',
             'keywords' => 'nullable|array',
             'notify_email' => 'sometimes|boolean',

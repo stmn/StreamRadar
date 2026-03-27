@@ -16,9 +16,12 @@ class Category extends Model
         'is_active',
         'notifications_enabled',
         'use_global_filters',
+        'filter_source',
         'min_viewers',
+        'min_avg_viewers',
         'languages',
         'keywords',
+        'tags',
     ];
 
     protected function casts(): array
@@ -28,8 +31,10 @@ class Category extends Model
             'notifications_enabled' => 'boolean',
             'use_global_filters' => 'boolean',
             'min_viewers' => 'integer',
+            'min_avg_viewers' => 'integer',
             'languages' => 'array',
             'keywords' => 'array',
+            'tags' => 'array',
         ];
     }
 
@@ -45,18 +50,36 @@ class Category extends Model
 
     public function effectiveFilters(): array
     {
-        if ($this->use_global_filters) {
+        $source = $this->filter_source ?? ($this->use_global_filters ? 'global' : 'custom');
+
+        if (str_starts_with($source, 'tag:')) {
+            $tag = substr($source, 4);
+            $tagFilter = TagFilter::where('tag', $tag)->first();
+            if ($tagFilter) {
+                return [
+                    'min_viewers' => $tagFilter->min_viewers,
+                    'min_avg_viewers' => $tagFilter->min_avg_viewers,
+                    'languages' => $tagFilter->languages ?? [],
+                    'keywords' => $tagFilter->keywords ?? [],
+                ];
+            }
+        }
+
+        if ($source === 'custom') {
             return [
-                'min_viewers' => (int) Setting::get('global_min_viewers', 0) ?: null,
-                'languages' => Setting::get('global_languages') ? json_decode(Setting::get('global_languages'), true) : [],
-                'keywords' => Setting::get('global_keywords') ? json_decode(Setting::get('global_keywords'), true) : [],
+                'min_viewers' => $this->min_viewers,
+                'min_avg_viewers' => $this->min_avg_viewers,
+                'languages' => $this->languages ?? [],
+                'keywords' => $this->keywords ?? [],
             ];
         }
 
+        // Global (default)
         return [
-            'min_viewers' => $this->min_viewers,
-            'languages' => $this->languages ?? [],
-            'keywords' => $this->keywords ?? [],
+            'min_viewers' => (int) Setting::get('global_min_viewers', 0) ?: null,
+            'min_avg_viewers' => (int) Setting::get('global_min_avg_viewers', 0) ?: null,
+            'languages' => Setting::get('global_languages') ? json_decode(Setting::get('global_languages'), true) : [],
+            'keywords' => Setting::get('global_keywords') ? json_decode(Setting::get('global_keywords'), true) : [],
         ];
     }
 

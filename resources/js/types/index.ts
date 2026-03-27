@@ -6,12 +6,24 @@ export interface Category {
     is_active: boolean;
     notifications_enabled: boolean;
     use_global_filters: boolean;
+    filter_source: string;
     min_viewers: number | null;
+    min_avg_viewers: number | null;
     languages: string[] | null;
     keywords: string[] | null;
+    tags: string[] | null;
     streams_count?: number;
     created_at: string;
     updated_at: string;
+}
+
+export interface TagFilter {
+    id: number;
+    tag: string;
+    min_viewers: number | null;
+    min_avg_viewers: number | null;
+    languages: string[] | null;
+    keywords: string[] | null;
 }
 
 export interface Stream {
@@ -26,6 +38,7 @@ export interface Stream {
     game_box_art_url: string | null;
     title: string;
     viewer_count: number;
+    avg_viewers: number | null;
     language: string | null;
     thumbnail_url: string | null;
     profile_image_url: string | null;
@@ -40,9 +53,11 @@ export interface AlertRule {
     name: string;
     streamer_login: string | null;
     category_id: number | null;
+    category_tags: string[] | null;
     category?: Category;
     match_mode: 'first_time' | 'always';
     min_viewers: number | null;
+    min_avg_viewers: number | null;
     language: string | null;
     keywords: string[] | null;
     notify_email: boolean;
