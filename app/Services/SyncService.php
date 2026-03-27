@@ -16,6 +16,7 @@ class SyncService
     public function __construct(
         private TwitchApiService $twitch,
         private AlertService $alerts,
+        private TwitchTrackerService $tracker,
     ) {}
 
     public function getAlertService(): AlertService
@@ -30,6 +31,7 @@ class SyncService
 
         $categories = Category::where('is_active', true)->get();
         $allFetchedStreamIds = [];
+        $allApiIds = [];
         $allTriggered = [];
 
         // Sync categories
@@ -39,6 +41,7 @@ class SyncService
             $totals['updated'] += $result['updated'];
             $totals['alerts'] += $result['alerts'];
             array_push($allFetchedStreamIds, ...$result['stream_ids']);
+            array_push($allApiIds, ...$result['all_api_ids']);
             array_push($allTriggered, ...$result['triggered_alerts']);
         }
 
@@ -48,26 +51,31 @@ class SyncService
         $totals['updated'] += $channelResult['updated'];
         $totals['alerts'] += $channelResult['alerts'];
         array_push($allFetchedStreamIds, ...$channelResult['stream_ids']);
+        array_push($allApiIds, ...$channelResult['all_api_ids']);
         array_push($allTriggered, ...$channelResult['triggered_alerts']);
 
-        // Remove streams that are no longer live — log each as offline
+        // Remove streams no longer in our filtered set
         $endedQuery = Stream::with('category');
         if (! empty($allFetchedStreamIds)) {
             $endedQuery->whereNotIn('twitch_id', $allFetchedStreamIds);
         }
         $endedStreams = $endedQuery->get();
 
+        // Only log offline for streams actually offline (not returned by API at all)
+        // Streams that are still live but filtered out (e.g. below min_viewers) are removed silently
         foreach ($endedStreams as $stream) {
-            HistoryEvent::create([
-                'type' => 'stream_offline',
-                'stream_twitch_id' => $stream->twitch_id,
-                'streamer_login' => $stream->user_login,
-                'streamer_name' => $stream->user_name,
-                'category_name' => $stream->category?->name,
-                'title' => $stream->title,
-                'viewer_count' => $stream->viewer_count,
-                'profile_image_url' => $stream->profile_image_url,
-            ]);
+            if (! in_array($stream->twitch_id, $allApiIds)) {
+                HistoryEvent::create([
+                    'type' => 'stream_offline',
+                    'stream_twitch_id' => $stream->twitch_id,
+                    'streamer_login' => $stream->user_login,
+                    'streamer_name' => $stream->user_name,
+                    'category_name' => $stream->category?->name,
+                    'title' => $stream->title,
+                    'viewer_count' => $stream->viewer_count,
+                    'profile_image_url' => $stream->profile_image_url,
+                ]);
+            }
         }
         $endedCount = $endedStreams->count();
         Stream::whereIn('id', $endedStreams->pluck('id'))->delete();
@@ -107,6 +115,7 @@ class SyncService
         $updatedStreams = 0;
         $alertsTriggered = 0;
         $fetchedIds = [];
+        $allApiIds = [];
         $allTriggered = [];
 
         $blacklist = $this->loadBlacklist();
@@ -116,13 +125,22 @@ class SyncService
         } catch (\Exception $e) {
             Log::error("Failed to fetch streams for category {$category->name}: ".$e->getMessage());
 
-            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => [], 'triggered_alerts' => []];
+            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => [], 'all_api_ids' => [], 'triggered_alerts' => []];
         }
 
         $filters = $category->effectiveFilters();
 
+        // Prefetch avg_viewers if filter requires it
+        $avgViewersMap = [];
+        if (! empty($filters['min_avg_viewers'])) {
+            $logins = array_map(fn ($s) => strtolower($s['user_login'] ?? ''), $twitchStreams);
+            $avgViewersMap = $this->tracker->getAvgViewersBulk(array_unique(array_filter($logins)));
+        }
+
         foreach ($twitchStreams as $twitchStream) {
-            if (! $this->passesFilters($twitchStream, $filters)) {
+            $allApiIds[] = $twitchStream['id'];
+
+            if (! $this->passesFilters($twitchStream, $filters, $avgViewersMap)) {
                 continue;
             }
 
@@ -150,6 +168,7 @@ class SyncService
                     'game_box_art_url' => ! empty($twitchStream['game_id']) ? "https://static-cdn.jtvnw.net/ttv-boxart/{$twitchStream['game_id']}_IGDB-{width}x{height}.jpg" : $category->box_art_url,
                     'title' => $twitchStream['title'] ?? '',
                     'viewer_count' => $twitchStream['viewer_count'] ?? 0,
+                    'avg_viewers' => $avgViewersMap[strtolower($twitchStream['user_login'] ?? '')] ?? null,
                     'language' => $twitchStream['language'] ?? null,
                     'thumbnail_url' => $twitchStream['thumbnail_url'] ?? null,
                     'started_at' => $twitchStream['started_at'] ?? null,
@@ -158,6 +177,12 @@ class SyncService
                     'synced_at' => now(),
                 ],
             );
+
+            $stream->setRelation('category', $category);
+
+            $triggered = $this->alerts->checkAlerts($stream, $oldStream, $silentAlerts);
+            $alertsTriggered += count($triggered);
+            array_push($allTriggered, ...$triggered);
 
             if ($isNew) {
                 $newStreams++;
@@ -175,22 +200,18 @@ class SyncService
             } else {
                 $updatedStreams++;
             }
-
-            $triggered = $this->alerts->checkAlerts($stream, $oldStream, $silentAlerts);
-            $alertsTriggered += count($triggered);
-            array_push($allTriggered, ...$triggered);
         }
 
         $this->fetchMissingAvatars();
 
-        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds, 'triggered_alerts' => $allTriggered];
+        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds, 'all_api_ids' => $allApiIds, 'triggered_alerts' => $allTriggered];
     }
 
     public function syncTrackedChannels(bool $silentAlerts = false): array
     {
         $channels = TrackedChannel::where('is_active', true)->get();
         if ($channels->isEmpty()) {
-            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => [], 'triggered_alerts' => []];
+            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => [], 'all_api_ids' => [], 'triggered_alerts' => []];
         }
 
         $logins = $channels->pluck('user_login')->toArray();
@@ -199,6 +220,7 @@ class SyncService
         $updatedStreams = 0;
         $alertsTriggered = 0;
         $fetchedIds = [];
+        $allApiIds = [];
         $allTriggered = [];
 
         try {
@@ -206,7 +228,7 @@ class SyncService
         } catch (\Exception $e) {
             Log::error('Failed to fetch tracked channel streams: '.$e->getMessage());
 
-            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => [], 'triggered_alerts' => []];
+            return ['new' => 0, 'updated' => 0, 'alerts' => 0, 'stream_ids' => [], 'all_api_ids' => [], 'triggered_alerts' => []];
         }
 
         // Map game_id to existing categories (don't auto-create)
@@ -214,6 +236,8 @@ class SyncService
         $categoryMap = Category::whereIn('twitch_id', $gameIds)->pluck('id', 'twitch_id')->toArray();
 
         foreach ($twitchStreams as $twitchStream) {
+            $allApiIds[] = $twitchStream['id'];
+
             if ($this->isOfflineThumbnail($twitchStream['thumbnail_url'] ?? null)) {
                 continue;
             }
@@ -240,6 +264,7 @@ class SyncService
                     'game_box_art_url' => ! empty($twitchStream['game_id']) ? "https://static-cdn.jtvnw.net/ttv-boxart/{$twitchStream['game_id']}_IGDB-{width}x{height}.jpg" : null,
                     'title' => $twitchStream['title'] ?? '',
                     'viewer_count' => $twitchStream['viewer_count'] ?? 0,
+                    'avg_viewers' => $this->tracker->getAvgViewers($twitchStream['user_login'] ?? ''),
                     'language' => $twitchStream['language'] ?? null,
                     'thumbnail_url' => $twitchStream['thumbnail_url'] ?? null,
                     'started_at' => $twitchStream['started_at'] ?? null,
@@ -248,6 +273,12 @@ class SyncService
                     'synced_at' => now(),
                 ],
             );
+
+            $stream->load('category');
+
+            $triggered = $this->alerts->checkAlerts($stream, $oldStream, $silentAlerts);
+            $alertsTriggered += count($triggered);
+            array_push($allTriggered, ...$triggered);
 
             if ($isNew) {
                 $newStreams++;
@@ -264,15 +295,11 @@ class SyncService
             } else {
                 $updatedStreams++;
             }
-
-            $triggered = $this->alerts->checkAlerts($stream, $oldStream, $silentAlerts);
-            $alertsTriggered += count($triggered);
-            array_push($allTriggered, ...$triggered);
         }
 
         $this->fetchMissingAvatars();
 
-        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds, 'triggered_alerts' => $allTriggered];
+        return ['new' => $newStreams, 'updated' => $updatedStreams, 'alerts' => $alertsTriggered, 'stream_ids' => $fetchedIds, 'all_api_ids' => $allApiIds, 'triggered_alerts' => $allTriggered];
     }
 
     private function loadBlacklist(): array
@@ -313,10 +340,18 @@ class SyncService
         return $url && str_contains($url, 'ttv-static/404_preview');
     }
 
-    private function passesFilters(array $stream, array $filters): bool
+    private function passesFilters(array $stream, array $filters, array $avgViewersMap = []): bool
     {
         if (! empty($filters['min_viewers']) && ($stream['viewer_count'] ?? 0) < $filters['min_viewers']) {
             return false;
+        }
+
+        if (! empty($filters['min_avg_viewers'])) {
+            $login = strtolower($stream['user_login'] ?? '');
+            $avg = $avgViewersMap[$login] ?? ($stream['viewer_count'] ?? 0);
+            if ($avg < $filters['min_avg_viewers']) {
+                return false;
+            }
         }
 
         if (! empty($filters['languages'])) {

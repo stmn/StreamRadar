@@ -23,6 +23,7 @@ class SettingsController extends Controller
         'auto_sync_enabled',
         'sync_frequency_minutes',
         'global_min_viewers',
+        'global_min_avg_viewers',
         'global_languages',
         'global_keywords',
         'theme',
@@ -50,6 +51,7 @@ class SettingsController extends Controller
         $settings = Setting::getMany(self::SETTING_KEYS, [
             'sync_frequency_minutes' => '5',
             'global_min_viewers' => '0',
+            'global_min_avg_viewers' => '0',
             'global_languages' => '[]',
             'global_keywords' => '[]',
             'theme' => 'system',

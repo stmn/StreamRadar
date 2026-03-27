@@ -1,0 +1,36 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('categories', function (Blueprint $table) {
+            $table->integer('min_avg_viewers')->nullable()->after('min_viewers');
+        });
+
+        Schema::table('tag_filters', function (Blueprint $table) {
+            $table->integer('min_avg_viewers')->nullable()->after('min_viewers');
+        });
+
+        Schema::table('alert_rules', function (Blueprint $table) {
+            $table->integer('min_avg_viewers')->nullable()->after('min_viewers');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('categories', function (Blueprint $table) {
+            $table->dropColumn('min_avg_viewers');
+        });
+        Schema::table('tag_filters', function (Blueprint $table) {
+            $table->dropColumn('min_avg_viewers');
+        });
+        Schema::table('alert_rules', function (Blueprint $table) {
+            $table->dropColumn('min_avg_viewers');
+        });
+    }
+};

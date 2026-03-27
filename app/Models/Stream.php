@@ -20,6 +20,7 @@ class Stream extends Model
         'game_box_art_url',
         'title',
         'viewer_count',
+        'avg_viewers',
         'language',
         'thumbnail_url',
         'profile_image_url',
@@ -33,6 +34,7 @@ class Stream extends Model
     {
         return [
             'viewer_count' => 'integer',
+            'avg_viewers' => 'integer',
             'started_at' => 'datetime',
             'synced_at' => 'datetime',
             'tags' => 'array',

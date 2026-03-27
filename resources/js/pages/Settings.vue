@@ -14,6 +14,7 @@ const form = useForm({
     auto_sync_enabled: props.settings.auto_sync_enabled !== '0' && props.settings.auto_sync_enabled !== false,
     sync_frequency_minutes: props.settings.sync_frequency_minutes || '5',
     global_min_viewers: props.settings.global_min_viewers || '0',
+    global_min_avg_viewers: props.settings.global_min_avg_viewers || '0',
     global_languages: props.settings.global_languages || '[]',
     global_keywords: props.settings.global_keywords || '[]',
     theme: props.settings.theme || 'system',
@@ -298,10 +299,17 @@ onMounted(() => {
                     </div>
                     <p class="text-xs text-gray-500 dark:text-zinc-500 mb-4">Default filters for categories using global settings.</p>
                     <div class="space-y-4">
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Minimum Viewers</label>
-                            <input v-model="form.global_min_viewers" type="number" min="0"
-                                class="w-32 px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Minimum Viewers</label>
+                                <input v-model="form.global_min_viewers" type="number" min="0"
+                                    class="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Min Avg Viewers <span class="font-normal text-gray-400 dark:text-zinc-600">TwitchTracker</span></label>
+                                <input v-model="form.global_min_avg_viewers" type="number" min="0"
+                                    class="w-full px-3 py-2 text-sm rounded-lg bg-gray-50 dark:bg-zinc-800 text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500" />
+                            </div>
                         </div>
                         <div>
                             <label class="block text-xs font-medium text-gray-600 dark:text-zinc-400 mb-1">Languages</label>
