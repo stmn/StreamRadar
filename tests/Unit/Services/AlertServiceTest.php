@@ -285,3 +285,31 @@ test('sendNotifications does not send Discord when no rule has notify_discord', 
 
     Http::assertNothingSent();
 });
+
+test('sendNotifications skips Discord when global notifications_discord_enabled is 0', function () {
+    Http::fake();
+    Setting::set('discord_webhook_url', 'https://discord.com/api/webhooks/test');
+    Setting::set('notifications_discord_enabled', '0');
+    $service = app(AlertService::class);
+
+    $rule = AlertRule::factory()->withDiscord()->create();
+    $stream = Stream::factory()->create();
+
+    $service->sendNotifications([['rule' => $rule, 'stream' => $stream]]);
+
+    Http::assertNothingSent();
+});
+
+test('sendNotifications skips email when global notifications_email_enabled is 0', function () {
+    Mail::fake();
+    Setting::set('mail_to', 'test@example.com');
+    Setting::set('notifications_email_enabled', '0');
+    $service = app(AlertService::class);
+
+    $rule = AlertRule::factory()->withEmail()->create();
+    $stream = Stream::factory()->create();
+
+    $service->sendNotifications([['rule' => $rule, 'stream' => $stream]]);
+
+    Mail::assertNothingSent();
+});

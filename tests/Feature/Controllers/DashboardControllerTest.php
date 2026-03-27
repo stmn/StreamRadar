@@ -21,45 +21,49 @@ test('shows streams from active categories', function () {
 
 test('filters by language', function () {
     $cat = Category::factory()->create();
-    Stream::factory()->forCategory($cat)->create(['language' => 'en', 'user_name' => 'EnglishStreamer']);
-    Stream::factory()->forCategory($cat)->create(['language' => 'pl', 'user_name' => 'PolishStreamer']);
+    Stream::factory()->forCategory($cat)->create(['language' => 'en', 'user_login' => 'english']);
+    Stream::factory()->forCategory($cat)->create(['language' => 'pl', 'user_login' => 'polish']);
 
     $this->get('/?lang=en')
         ->assertInertia(fn ($page) => $page
             ->has('streams', 1)
+            ->where('streams.0.user_login', 'english')
         );
 });
 
 test('filters by min_viewers', function () {
     $cat = Category::factory()->create();
-    Stream::factory()->forCategory($cat)->withViewers(500)->create();
-    Stream::factory()->forCategory($cat)->withViewers(10)->create();
+    Stream::factory()->forCategory($cat)->withViewers(500)->create(['user_login' => 'big']);
+    Stream::factory()->forCategory($cat)->withViewers(10)->create(['user_login' => 'small']);
 
     $this->get('/?min_viewers=100')
         ->assertInertia(fn ($page) => $page
             ->has('streams', 1)
+            ->where('streams.0.viewer_count', 500)
         );
 });
 
 test('filters by hide_mature', function () {
     $cat = Category::factory()->create();
-    Stream::factory()->forCategory($cat)->create(['is_mature' => false]);
-    Stream::factory()->forCategory($cat)->mature()->create();
+    Stream::factory()->forCategory($cat)->create(['is_mature' => false, 'user_login' => 'clean']);
+    Stream::factory()->forCategory($cat)->mature()->create(['user_login' => 'mature']);
 
     $this->get('/?hide_mature=1')
         ->assertInertia(fn ($page) => $page
             ->has('streams', 1)
+            ->where('streams.0.user_login', 'clean')
         );
 });
 
 test('filters by search term matching user_name', function () {
     $cat = Category::factory()->create();
-    Stream::factory()->forCategory($cat)->create(['user_name' => 'TargetStreamer']);
-    Stream::factory()->forCategory($cat)->create(['user_name' => 'OtherPerson']);
+    Stream::factory()->forCategory($cat)->create(['user_name' => 'TargetStreamer', 'user_login' => 'target']);
+    Stream::factory()->forCategory($cat)->create(['user_name' => 'OtherPerson', 'user_login' => 'other']);
 
     $this->get('/?search=Target')
         ->assertInertia(fn ($page) => $page
             ->has('streams', 1)
+            ->where('streams.0.user_login', 'target')
         );
 });
 

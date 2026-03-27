@@ -8,6 +8,7 @@ use App\Models\Stream;
 use App\Models\TrackedChannel;
 use App\Services\SyncService;
 use App\Services\TwitchApiService;
+use App\Services\TwitchTrackerService;
 
 function makeTwitchStream(array $overrides = []): array
 {
@@ -32,9 +33,10 @@ function makeTwitchStream(array $overrides = []): array
 
 test('syncCategory creates new streams from Twitch data', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
 
-    $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([makeTwitchStream()]);
+    $twitch->shouldReceive('getAllStreamsForCategory')->with($category->twitch_id)->andReturn([makeTwitchStream()]);
     $twitch->shouldReceive('getUsersByIds')->andReturn([]);
 
     $sync = app(SyncService::class);
@@ -46,6 +48,7 @@ test('syncCategory creates new streams from Twitch data', function () {
 
 test('syncCategory updates existing streams', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
     $stream = Stream::factory()->forCategory($category)->create(['twitch_id' => '999']);
 
@@ -63,6 +66,7 @@ test('syncCategory updates existing streams', function () {
 
 test('syncCategory skips streams below min_viewers filter', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->withLocalFilters(minViewers: 1000)->create();
 
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([
@@ -79,6 +83,7 @@ test('syncCategory skips streams below min_viewers filter', function () {
 
 test('syncCategory skips streams with wrong language', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->withLocalFilters(0, ['en'])->create();
 
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([
@@ -94,6 +99,7 @@ test('syncCategory skips streams with wrong language', function () {
 
 test('syncCategory skips streams with offline thumbnail', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
 
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([
@@ -109,6 +115,7 @@ test('syncCategory skips streams with offline thumbnail', function () {
 
 test('syncCategory skips blacklisted channels', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
     BlacklistRule::factory()->channel('badstreamer')->create();
 
@@ -125,6 +132,7 @@ test('syncCategory skips blacklisted channels', function () {
 
 test('syncCategory skips blacklisted keywords in title', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
     BlacklistRule::factory()->keyword('gambling')->create();
 
@@ -141,6 +149,7 @@ test('syncCategory skips blacklisted keywords in title', function () {
 
 test('syncCategory skips blacklisted tags', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
     BlacklistRule::factory()->tag('gambling')->create();
 
@@ -157,6 +166,7 @@ test('syncCategory skips blacklisted tags', function () {
 
 test('syncCategory creates stream_online HistoryEvent for new streams', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
 
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([makeTwitchStream()]);
@@ -170,6 +180,7 @@ test('syncCategory creates stream_online HistoryEvent for new streams', function
 
 test('syncCategory handles Twitch API exception gracefully', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
 
     $twitch->shouldReceive('getAllStreamsForCategory')->andThrow(new \Exception('API error'));
@@ -185,6 +196,7 @@ test('syncCategory handles Twitch API exception gracefully', function () {
 
 test('sync removes streams no longer live and logs offline events', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $category = Category::factory()->create();
     Stream::factory()->forCategory($category)->create(['twitch_id' => 'old_stream']);
 
@@ -204,6 +216,7 @@ test('sync removes streams no longer live and logs offline events', function () 
 
 test('sync creates sync_completed HistoryEvent', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
 
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([]);
     $twitch->shouldReceive('getStreamsByUsers')->andReturn([]);
@@ -217,6 +230,7 @@ test('sync creates sync_completed HistoryEvent', function () {
 
 test('sync updates last_sync_at setting', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
 
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([]);
     $twitch->shouldReceive('getStreamsByUsers')->andReturn([]);
@@ -230,6 +244,7 @@ test('sync updates last_sync_at setting', function () {
 
 test('sync returns SyncResult DTO', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
 
     $twitch->shouldReceive('getAllStreamsForCategory')->andReturn([]);
     $twitch->shouldReceive('getStreamsByUsers')->andReturn([]);
@@ -246,6 +261,7 @@ test('sync returns SyncResult DTO', function () {
 
 test('syncTrackedChannels returns empty result when no active channels', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $this->mock(TwitchTrackerService::class);
     $sync = app(SyncService::class);
 
     $result = $sync->syncTrackedChannels();
@@ -255,6 +271,8 @@ test('syncTrackedChannels returns empty result when no active channels', functio
 
 test('syncTrackedChannels creates streams for tracked channels', function () {
     $twitch = $this->mock(TwitchApiService::class);
+    $tracker = $this->mock(TwitchTrackerService::class);
+    $tracker->shouldReceive('getAvgViewers')->andReturn(null);
     TrackedChannel::factory()->create(['user_login' => 'trackeduser']);
 
     $twitch->shouldReceive('getStreamsByUsers')->with(['trackeduser'])->andReturn([

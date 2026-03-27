@@ -109,10 +109,28 @@ test('POST /tracking/categories/{id}/sync syncs category', function () {
         $mock->shouldReceive('getAllStreamsForCategory')->andReturn([]);
         $mock->shouldReceive('getUsersByIds')->andReturn([]);
     });
+    $this->mock(\App\Services\TwitchTrackerService::class);
 
     $category = Category::factory()->create();
 
     $this->post("/tracking/categories/{$category->id}/sync")->assertRedirect();
+});
+
+test('POST /tracking/categories/{id}/sync removes stale streams that no longer pass filters', function () {
+    $this->mock(TwitchApiService::class, function ($mock) {
+        $mock->shouldReceive('isConfigured')->andReturn(true);
+        $mock->shouldReceive('getAllStreamsForCategory')->andReturn([]);
+        $mock->shouldReceive('getUsersByIds')->andReturn([]);
+    });
+    $this->mock(\App\Services\TwitchTrackerService::class);
+
+    $category = Category::factory()->create(['filter_source' => 'custom', 'use_global_filters' => false, 'min_viewers' => 100]);
+    // Old stream that no longer passes filter (API returns empty → no stream_ids)
+    Stream::factory()->forCategory($category)->create(['twitch_id' => 'stale_stream']);
+
+    $this->post("/tracking/categories/{$category->id}/sync")->assertRedirect();
+
+    $this->assertDatabaseMissing('streams', ['twitch_id' => 'stale_stream']);
 });
 
 test('POST /tracking/channels creates a tracked channel', function () {

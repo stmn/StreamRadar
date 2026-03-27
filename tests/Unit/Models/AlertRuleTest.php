@@ -135,6 +135,70 @@ test('fails when one of multiple criteria is not met', function () {
     expect($rule->matchesStream($stream))->toBeFalse();
 });
 
+// min_avg_viewers
+
+test('rejects stream when avg_viewers is below min_avg_viewers', function () {
+    $rule = AlertRule::factory()->create(['min_avg_viewers' => 100]);
+    $stream = Stream::factory()->create(['avg_viewers' => 30]);
+
+    expect($rule->matchesStream($stream))->toBeFalse();
+});
+
+test('matches stream when avg_viewers meets min_avg_viewers', function () {
+    $rule = AlertRule::factory()->create(['min_avg_viewers' => 100]);
+    $stream = Stream::factory()->create(['avg_viewers' => 200]);
+
+    expect($rule->matchesStream($stream))->toBeTrue();
+});
+
+test('min_avg_viewers falls back to viewer_count when avg_viewers is null', function () {
+    $rule = AlertRule::factory()->create(['min_avg_viewers' => 100]);
+    $stream = Stream::factory()->withViewers(200)->create(['avg_viewers' => null]);
+
+    expect($rule->matchesStream($stream))->toBeTrue();
+});
+
+test('min_avg_viewers fallback rejects when viewer_count also below threshold', function () {
+    $rule = AlertRule::factory()->create(['min_avg_viewers' => 100]);
+    $stream = Stream::factory()->withViewers(30)->create(['avg_viewers' => null]);
+
+    expect($rule->matchesStream($stream))->toBeFalse();
+});
+
+// category_tags
+
+test('matches stream when category has matching tag', function () {
+    $category = Category::factory()->create(['tags' => ['retro', 'chill']]);
+    $rule = AlertRule::factory()->create(['category_tags' => ['retro']]);
+    $stream = Stream::factory()->forCategory($category)->create();
+
+    expect($rule->matchesStream($stream))->toBeTrue();
+});
+
+test('rejects stream when category has no matching tag', function () {
+    $category = Category::factory()->create(['tags' => ['fps']]);
+    $rule = AlertRule::factory()->create(['category_tags' => ['retro']]);
+    $stream = Stream::factory()->forCategory($category)->create();
+
+    expect($rule->matchesStream($stream))->toBeFalse();
+});
+
+test('category_tags matching is case-insensitive', function () {
+    $category = Category::factory()->create(['tags' => ['Retro']]);
+    $rule = AlertRule::factory()->create(['category_tags' => ['retro']]);
+    $stream = Stream::factory()->forCategory($category)->create();
+
+    expect($rule->matchesStream($stream))->toBeTrue();
+});
+
+test('rejects stream when category has no tags and rule requires tags', function () {
+    $category = Category::factory()->create(['tags' => null]);
+    $rule = AlertRule::factory()->create(['category_tags' => ['retro']]);
+    $stream = Stream::factory()->forCategory($category)->create();
+
+    expect($rule->matchesStream($stream))->toBeFalse();
+});
+
 // isForSpecificStreamer()
 
 test('isForSpecificStreamer returns true when streamer_login is set', function () {
