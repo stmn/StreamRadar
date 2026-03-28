@@ -188,7 +188,7 @@ class SettingsController extends Controller
         // Import categories
         if (! empty($data['categories'])) {
             foreach ($data['categories'] as $cat) {
-                Category::firstOrCreate(
+                Category::updateOrCreate(
                     ['twitch_id' => $cat['twitch_id']],
                     collect($cat)->except('twitch_id')->toArray(),
                 );
@@ -198,7 +198,7 @@ class SettingsController extends Controller
         // Import channels
         if (! empty($data['channels'])) {
             foreach ($data['channels'] as $ch) {
-                TrackedChannel::firstOrCreate(
+                TrackedChannel::updateOrCreate(
                     ['twitch_user_id' => $ch['twitch_user_id']],
                     collect($ch)->except('twitch_user_id')->toArray(),
                 );
@@ -208,7 +208,7 @@ class SettingsController extends Controller
         // Import blacklist
         if (! empty($data['blacklist'])) {
             foreach ($data['blacklist'] as $rule) {
-                BlacklistRule::firstOrCreate(
+                BlacklistRule::updateOrCreate(
                     ['type' => $rule['type'], 'value' => $rule['value']],
                     collect($rule)->except(['type', 'value'])->toArray(),
                 );
@@ -218,7 +218,7 @@ class SettingsController extends Controller
         // Import tag filters
         if (! empty($data['tag_filters'])) {
             foreach ($data['tag_filters'] as $tf) {
-                TagFilter::firstOrCreate(
+                TagFilter::updateOrCreate(
                     ['tag' => $tf['tag']],
                     collect($tf)->except('tag')->toArray(),
                 );
@@ -244,7 +244,7 @@ class SettingsController extends Controller
                     ));
                 }
 
-                AlertRule::firstOrCreate(
+                AlertRule::updateOrCreate(
                     ['name' => $alert['name']],
                     $alertData,
                 );
