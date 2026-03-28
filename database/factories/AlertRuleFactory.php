@@ -15,6 +15,7 @@ class AlertRuleFactory extends Factory
             'name' => fake()->words(3, true),
             'streamer_login' => null,
             'category_id' => null,
+            'category_ids' => null,
             'category_tags' => null,
             'match_mode' => 'always',
             'min_viewers' => null,

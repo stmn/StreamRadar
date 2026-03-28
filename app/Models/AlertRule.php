@@ -14,6 +14,7 @@ class AlertRule extends Model
         'name',
         'streamer_login',
         'category_id',
+        'category_ids',
         'category_tags',
         'match_mode',
         'min_viewers',
@@ -35,6 +36,7 @@ class AlertRule extends Model
             'min_viewers' => 'integer',
             'min_avg_viewers' => 'integer',
             'keywords' => 'array',
+            'category_ids' => 'array',
             'category_tags' => 'array',
             'notify_email' => 'boolean',
             'notify_discord' => 'boolean',
@@ -72,7 +74,11 @@ class AlertRule extends Model
             return false;
         }
 
-        if ($this->category_id && $this->category_id !== $stream->category_id) {
+        if (! empty($this->category_ids)) {
+            if (! in_array($stream->category_id, $this->category_ids)) {
+                return false;
+            }
+        } elseif ($this->category_id && $this->category_id !== $stream->category_id) {
             return false;
         }
 

@@ -54,43 +54,49 @@ class SyncService
         array_push($allApiIds, ...$channelResult['all_api_ids']);
         array_push($allTriggered, ...$channelResult['triggered_alerts']);
 
-        // Grace period: don't remove streams immediately — mark as missing first
-        // Streams missing for 3+ sync cycles are considered truly offline
-        $gracePeriodMinutes = max(3 * (int) Setting::get('sync_frequency_minutes', 5), 3);
-
-        $missingQuery = Stream::query();
+        // Remove streams no longer in our filtered set
+        $missingQuery = Stream::with('category');
         if (! empty($allFetchedStreamIds)) {
             $missingQuery->whereNotIn('twitch_id', $allFetchedStreamIds);
         }
         $missingStreams = $missingQuery->get();
 
         $endedCount = 0;
+        $gracePeriodMinutes = max(3 * (int) Setting::get('sync_frequency_minutes', 5), 3);
 
         foreach ($missingStreams as $stream) {
+            $stillLiveOnTwitch = in_array($stream->twitch_id, $allApiIds);
+
+            if ($stillLiveOnTwitch) {
+                // Stream is live but filtered out (e.g. below min_avg_viewers)
+                // Remove immediately, no offline event
+                $stream->delete();
+                $endedCount++;
+                continue;
+            }
+
+            // Stream not in API — might be actually offline or API hiccup
+            // Apply grace period
             if (! $stream->missing_since) {
-                // First time missing — start grace period
                 $stream->update(['missing_since' => now()]);
                 continue;
             }
 
             if ($stream->missing_since->diffInMinutes(now()) < $gracePeriodMinutes) {
-                // Still within grace period — keep
                 continue;
             }
 
-            // Grace period expired — actually remove
-            if (! in_array($stream->twitch_id, $allApiIds)) {
-                HistoryEvent::create([
-                    'type' => 'stream_offline',
-                    'stream_twitch_id' => $stream->twitch_id,
-                    'streamer_login' => $stream->user_login,
-                    'streamer_name' => $stream->user_name,
-                    'category_name' => $stream->category?->name,
-                    'title' => $stream->title,
-                    'viewer_count' => $stream->viewer_count,
-                    'profile_image_url' => $stream->profile_image_url,
-                ]);
-            }
+            // Grace period expired — actually offline
+            HistoryEvent::create([
+                'type' => 'stream_offline',
+                'stream_twitch_id' => $stream->twitch_id,
+                'streamer_login' => $stream->user_login,
+                'streamer_name' => $stream->user_name,
+                'category_name' => $stream->category?->name,
+                'title' => $stream->title,
+                'viewer_count' => $stream->viewer_count,
+                'profile_image_url' => $stream->profile_image_url,
+            ]);
 
             $stream->delete();
             $endedCount++;

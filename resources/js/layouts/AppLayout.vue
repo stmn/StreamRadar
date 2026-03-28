@@ -52,7 +52,7 @@ function formatLastSync(iso: string | null): string {
 </script>
 
 <template>
-    <div class="min-h-screen bg-gray-50 dark:bg-zinc-950 transition-colors duration-200">
+    <div class="min-h-screen flex flex-col bg-gray-50 dark:bg-zinc-950 transition-colors duration-200">
         <!-- Header -->
         <header class="sticky top-0 z-40 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -86,7 +86,7 @@ function formatLastSync(iso: string | null): string {
                                    disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': syncing }" />
-                            <span class="hidden sm:inline">Sync</span>
+                            <span class="hidden sm:inline">Scan</span>
                         </button>
                         <ThemeToggle />
                         <button v-if="isAuthEnabled" @click="router.post('/logout')"
@@ -133,8 +133,12 @@ function formatLastSync(iso: string | null): string {
 
         <FlashMessage :flash="flash" />
 
-        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <main class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
             <slot />
         </main>
+
+        <footer class="py-4 text-center text-[11px] text-gray-300 dark:text-zinc-700">
+            <a href="https://github.com/stmn/StreamRadar" target="_blank" class="hover:text-gray-500 dark:hover:text-zinc-500 transition-colors">StreamRadar</a>
+        </footer>
     </div>
 </template>

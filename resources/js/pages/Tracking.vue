@@ -369,7 +369,7 @@ function deleteChannel(ch: TrackedChannel) { router.delete(`/tracking/channels/$
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-1 shrink-0">
-                                    <button @click="syncCat(cat)" :disabled="syncingCat === cat.id" class="p-2 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50" v-tooltip="'Sync'">
+                                    <button @click="syncCat(cat)" :disabled="syncingCat === cat.id" class="p-2 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800 disabled:opacity-50" v-tooltip="'Scan'">
                                         <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': syncingCat === cat.id }" />
                                     </button>
                                     <button @click="editingId === cat.id ? editingId = null : startEdit(cat)" class="p-2 text-gray-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors rounded-lg hover:bg-gray-50 dark:hover:bg-zinc-800">

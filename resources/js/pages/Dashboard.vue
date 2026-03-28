@@ -236,7 +236,7 @@ const sortOptions = [
         <div v-if="isEmpty" class="text-center py-20">
             <Video class="w-16 h-16 mx-auto text-gray-300 dark:text-zinc-700" :stroke-width="1" />
             <h3 class="mt-4 text-lg font-semibold text-gray-700 dark:text-zinc-300">No streams found</h3>
-            <p class="mt-1 text-sm text-gray-500 dark:text-zinc-500">Add categories or channels to start tracking streams, then sync.</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-zinc-500">Add categories or channels to start tracking streams, then scan.</p>
         </div>
 
         <!-- Grouped View -->

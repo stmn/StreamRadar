@@ -15,6 +15,7 @@ class DashboardController extends Controller
         $trackedLogins = TrackedChannel::where('is_active', true)->pluck('user_login')->toArray();
 
         $query = Stream::with('category')
+            ->whereNull('missing_since')
             ->where('thumbnail_url', 'not like', '%ttv-static/404_preview%')
             ->where(function ($q) use ($trackedLogins) {
                 $q->whereHas('category', fn ($c) => $c->where('is_active', true));

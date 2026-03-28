@@ -53,6 +53,7 @@ export interface AlertRule {
     name: string;
     streamer_login: string | null;
     category_id: number | null;
+    category_ids: number[] | null;
     category_tags: string[] | null;
     category?: Category;
     match_mode: 'first_time' | 'always';

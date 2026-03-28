@@ -180,7 +180,7 @@ async function checkForUpdate() {
 const activeSection = ref('twitch');
 const sections = [
     { id: 'twitch', label: 'Twitch API', icon: Key },
-    { id: 'sync', label: 'Sync', icon: RefreshCw },
+    { id: 'sync', label: 'Scanning', icon: RefreshCw },
     { id: 'filters', label: 'Global Filters', icon: Filter },
     { id: 'email', label: 'Email / SMTP', icon: Mail },
     { id: 'discord', label: 'Discord', icon: MessageCircle },
@@ -295,7 +295,7 @@ onMounted(() => {
                     <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-2">
                             <RefreshCw class="w-5 h-5 text-purple-500" />
-                            <h3 class="text-lg font-bold text-gray-900 dark:text-white">Auto Synchronization</h3>
+                            <h3 class="text-lg font-bold text-gray-900 dark:text-white">Auto Scanning</h3>
                         </div>
                         <label class="flex items-center gap-2 cursor-pointer">
                             <input type="checkbox" v-model="form.auto_sync_enabled" class="rounded text-purple-600 focus:ring-purple-500 bg-white dark:bg-zinc-800" />
@@ -304,7 +304,7 @@ onMounted(() => {
                     </div>
                     <div v-if="form.auto_sync_enabled">
                         <div class="flex items-center justify-between mb-2">
-                            <label class="text-xs font-medium text-gray-600 dark:text-zinc-400">Sync Frequency</label>
+                            <label class="text-xs font-medium text-gray-600 dark:text-zinc-400">Scan Frequency</label>
                             <span class="text-sm font-semibold text-purple-600 dark:text-purple-400">{{ form.sync_frequency_minutes }} min</span>
                         </div>
                         <input v-model="form.sync_frequency_minutes" type="range" min="1" max="60" step="1"

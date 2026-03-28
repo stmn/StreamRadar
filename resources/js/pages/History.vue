@@ -63,7 +63,7 @@ const typeConfig: Record<string, { label: string; icon: any; color: string }> = 
     stream_online: { label: 'Stream Online', icon: Radio, color: 'text-green-500 bg-green-50 dark:bg-green-500/10' },
     stream_offline: { label: 'Stream Offline', icon: WifiOff, color: 'text-gray-500 bg-gray-100 dark:bg-zinc-800' },
     alert_triggered: { label: 'Alert', icon: Bell, color: 'text-amber-500 bg-amber-50 dark:bg-amber-500/10' },
-    sync_completed: { label: 'Sync', icon: RefreshCw, color: 'text-blue-500 bg-blue-50 dark:bg-blue-500/10' },
+    sync_completed: { label: 'Scan', icon: RefreshCw, color: 'text-blue-500 bg-blue-50 dark:bg-blue-500/10' },
 };
 const types = Object.keys(typeConfig);
 </script>
