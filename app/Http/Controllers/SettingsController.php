@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AlertRule;
 use App\Models\BlacklistRule;
 use App\Models\Category;
 use App\Models\Setting;
+use App\Models\TagFilter;
 use App\Models\TrackedChannel;
 use App\Services\TwitchApiService;
 use Illuminate\Http\JsonResponse;
@@ -134,9 +136,11 @@ class SettingsController extends Controller
 
         return response()->json([
             'settings' => $settings,
-            'categories' => Category::all(['twitch_id', 'name', 'box_art_url', 'is_active', 'notifications_enabled', 'use_global_filters', 'min_viewers', 'languages', 'keywords'])->toArray(),
+            'categories' => Category::all(['twitch_id', 'name', 'box_art_url', 'is_active', 'notifications_enabled', 'use_global_filters', 'filter_source', 'min_viewers', 'min_avg_viewers', 'languages', 'keywords', 'tags'])->toArray(),
             'channels' => TrackedChannel::all(['twitch_user_id', 'user_login', 'user_name', 'profile_image_url', 'is_active'])->toArray(),
             'blacklist' => BlacklistRule::all(['type', 'value', 'twitch_user_id', 'profile_image_url'])->toArray(),
+            'tag_filters' => TagFilter::all(['tag', 'min_viewers', 'min_avg_viewers', 'languages', 'keywords'])->toArray(),
+            'alerts' => AlertRule::all(['name', 'streamer_login', 'category_id', 'category_ids', 'category_tags', 'match_mode', 'min_viewers', 'min_avg_viewers', 'language', 'keywords', 'notify_email', 'notify_discord', 'notify_telegram', 'notify_webhook', 'notify_on_category_change', 'notify_on_stream_start', 'is_active'])->toArray(),
         ]);
     }
 
@@ -185,6 +189,26 @@ class SettingsController extends Controller
                 BlacklistRule::firstOrCreate(
                     ['type' => $rule['type'], 'value' => $rule['value']],
                     collect($rule)->except(['type', 'value'])->toArray(),
+                );
+            }
+        }
+
+        // Import tag filters
+        if (! empty($data['tag_filters'])) {
+            foreach ($data['tag_filters'] as $tf) {
+                TagFilter::firstOrCreate(
+                    ['tag' => $tf['tag']],
+                    collect($tf)->except('tag')->toArray(),
+                );
+            }
+        }
+
+        // Import alerts
+        if (! empty($data['alerts'])) {
+            foreach ($data['alerts'] as $alert) {
+                AlertRule::firstOrCreate(
+                    ['name' => $alert['name']],
+                    collect($alert)->except('name')->toArray(),
                 );
             }
         }
