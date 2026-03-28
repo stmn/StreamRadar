@@ -2,9 +2,7 @@
   <img src="public/images/logo.png" alt="StreamRadar" width="500">
 </p>
 
-<p align="center">A self-hosted dashboard for monitoring Twitch streams. Track categories and channels, filter by language and viewers, get alerts via email, Discord or webhooks.
-
-Free, open source, runs on your own computer or server.</p>
+<p align="center">A self-hosted dashboard for monitoring Twitch streams. Track categories and channels, filter by language and viewers, get alerts via email, Discord or webhooks.</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="License">
@@ -12,7 +10,7 @@ Free, open source, runs on your own computer or server.</p>
 
 ## Why
 
-Twitch lets you follow categories, but it won't notify you when a new stream goes live in one. There's no way to say "tell me when someone starts streaming this game in English with more than 50 viewers." You're left refreshing the category page manually and scrolling through hundreds of streams.
+Twitch lets you follow categories, but it won't notify you when a new stream goes live in one. **There's no way to say "tell me when someone starts streaming this game in English with more than 50 viewers."** You're left refreshing the category page manually and scrolling through hundreds of streams.
 
 StreamRadar watches the categories and channels you pick, checks for new streams automatically, and alerts you via email, Discord, or any webhook when something matches your conditions — language, viewer count, keywords, you name it. Self-hosted, private, no account needed.
 
