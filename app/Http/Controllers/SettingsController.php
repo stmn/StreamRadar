@@ -140,7 +140,29 @@ class SettingsController extends Controller
             'channels' => TrackedChannel::all(['twitch_user_id', 'user_login', 'user_name', 'profile_image_url', 'is_active'])->toArray(),
             'blacklist' => BlacklistRule::all(['type', 'value', 'twitch_user_id', 'profile_image_url'])->toArray(),
             'tag_filters' => TagFilter::all(['tag', 'min_viewers', 'min_avg_viewers', 'languages', 'keywords'])->toArray(),
-            'alerts' => AlertRule::all(['name', 'streamer_login', 'category_id', 'category_ids', 'category_tags', 'match_mode', 'min_viewers', 'min_avg_viewers', 'language', 'keywords', 'notify_email', 'notify_discord', 'notify_telegram', 'notify_webhook', 'notify_on_category_change', 'notify_on_stream_start', 'is_active'])->toArray(),
+            'alerts' => AlertRule::with('category')->get()->map(function ($rule) {
+                $categoryMap = Category::whereIn('id', $rule->category_ids ?? [])->pluck('twitch_id')->toArray();
+
+                return [
+                    'name' => $rule->name,
+                    'streamer_login' => $rule->streamer_login,
+                    'category_twitch_id' => $rule->category?->twitch_id,
+                    'category_twitch_ids' => $categoryMap,
+                    'category_tags' => $rule->category_tags,
+                    'match_mode' => $rule->match_mode,
+                    'min_viewers' => $rule->min_viewers,
+                    'min_avg_viewers' => $rule->min_avg_viewers,
+                    'language' => $rule->language,
+                    'keywords' => $rule->keywords,
+                    'notify_email' => $rule->notify_email,
+                    'notify_discord' => $rule->notify_discord,
+                    'notify_telegram' => $rule->notify_telegram,
+                    'notify_webhook' => $rule->notify_webhook,
+                    'notify_on_category_change' => $rule->notify_on_category_change,
+                    'notify_on_stream_start' => $rule->notify_on_stream_start,
+                    'is_active' => $rule->is_active,
+                ];
+            })->toArray(),
         ]);
     }
 
@@ -203,12 +225,28 @@ class SettingsController extends Controller
             }
         }
 
-        // Import alerts
+        // Import alerts (map twitch_ids back to local category IDs)
         if (! empty($data['alerts'])) {
+            $twitchToId = Category::pluck('id', 'twitch_id')->toArray();
+
             foreach ($data['alerts'] as $alert) {
+                $alertData = collect($alert)->except(['name', 'category_twitch_id', 'category_twitch_ids', 'category_id', 'category_ids'])->toArray();
+
+                // Map single category
+                if (! empty($alert['category_twitch_id'])) {
+                    $alertData['category_id'] = $twitchToId[$alert['category_twitch_id']] ?? null;
+                }
+
+                // Map multiple categories
+                if (! empty($alert['category_twitch_ids'])) {
+                    $alertData['category_ids'] = array_values(array_filter(
+                        array_map(fn ($tid) => $twitchToId[$tid] ?? null, $alert['category_twitch_ids'])
+                    ));
+                }
+
                 AlertRule::firstOrCreate(
                     ['name' => $alert['name']],
-                    collect($alert)->except('name')->toArray(),
+                    $alertData,
                 );
             }
         }
