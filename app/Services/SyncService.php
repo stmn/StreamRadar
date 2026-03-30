@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\DTOs\SyncResult;
+use App\Models\AlertRule;
 use App\Models\BlacklistRule;
 use App\Models\Category;
 use App\Models\HistoryEvent;
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\Log;
 
 class SyncService
 {
+    private ?bool $anyAlertNeedsAvg = null;
+
     public function __construct(
         private TwitchApiService $twitch,
         private AlertService $alerts,
@@ -152,9 +155,10 @@ class SyncService
 
         $filters = $category->effectiveFilters();
 
-        // Prefetch avg_viewers if filter requires it
+        // Prefetch avg_viewers if category filter or any alert rule requires it
         $avgViewersMap = [];
-        if (! empty($filters['min_avg_viewers'])) {
+        $this->anyAlertNeedsAvg ??= AlertRule::where('is_active', true)->whereNotNull('min_avg_viewers')->exists();
+        if (! empty($filters['min_avg_viewers']) || $this->anyAlertNeedsAvg) {
             $logins = array_map(fn ($s) => strtolower($s['user_login'] ?? ''), $twitchStreams);
             $avgViewersMap = $this->tracker->getAvgViewersBulk(array_unique(array_filter($logins)));
         }
